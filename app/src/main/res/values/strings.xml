@@ -1,3 +1,6 @@
 <resources>
     <string name="app_name">PhotoFingerEnd</string>
+    <string name="instruction_text">Dotknij symbolu odcisku palca aby zrobić zdjęcie</string>
+    <string name="identify">Identyfikuj!</string>
+    <string name="show_steps">Pokaż etapy</string>
 </resources>
