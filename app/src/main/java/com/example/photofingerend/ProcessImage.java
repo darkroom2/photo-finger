@@ -1,17 +1,15 @@
 package com.example.photofingerend;
 
-import android.graphics.Bitmap;
-
-import java.util.concurrent.Executor;
 
 public class ProcessImage {
-    private final Executor executor;
 
-    public ProcessImage(Executor executor) {
-        this.executor = executor;
+    private final String photoPath;
+
+    public ProcessImage(String photoPath) {
+        this.photoPath = photoPath;
     }
 
-    public void processImage(Bitmap bmp) {
+    public void processImage() {
 
     }
 }
