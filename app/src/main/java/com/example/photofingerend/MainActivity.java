@@ -14,6 +14,10 @@ import android.provider.MediaStore;
 import android.view.View;
 import android.widget.TextView;
 
+import org.opencv.android.BaseLoaderCallback;
+import org.opencv.android.LoaderCallbackInterface;
+import org.opencv.android.OpenCVLoader;
+
 import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
@@ -37,6 +41,32 @@ public class MainActivity extends AppCompatActivity {
     private View showStepsButton;
 
     public String currentPhotoPath;
+
+    private boolean openCvLoaded = false;
+
+    /*
+    Zaladowanie biblioteki openCV
+    */
+    private final BaseLoaderCallback mLoaderCallback = new BaseLoaderCallback(this) {
+        @Override
+        public void onManagerConnected(int status) {
+            if (status == LoaderCallbackInterface.SUCCESS) {
+                openCvLoaded = true;
+            } else {
+                super.onManagerConnected(status);
+            }
+        }
+    };
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (!OpenCVLoader.initDebug()) {
+            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, mLoaderCallback);
+        } else {
+            mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -131,8 +161,11 @@ public class MainActivity extends AppCompatActivity {
 
         executorService.execute(() -> {
 
-            ProcessImage pi = new ProcessImage(currentPhotoPath);
-            pi.processImage();
+            if (openCvLoaded) {
+                ProcessImage pi = new ProcessImage("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Inz_Rado_Lewa_Maly3.jpg");
+//                ProcessImage pi = new ProcessImage(currentPhotoPath);
+                pi.processImage();
+            }
 
             // otworz tutaj zdjecie i wyslij do klasy przetwarzajacej obraz
 
