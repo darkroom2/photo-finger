@@ -10,6 +10,7 @@ import android.os.Environment;
 import android.provider.MediaStore;
 import android.view.View;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
@@ -33,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -41,17 +43,15 @@ import de.hdodenhof.circleimageview.CircleImageView;
 
 public class MainActivity extends AppCompatActivity {
 
-    ExecutorService executorService = Executors.newSingleThreadExecutor();
-
     public static final int REQUEST_IMAGE_CAPTURE = 1;
-
+    public String currentPhotoPath;
+    ExecutorService executorService = Executors.newSingleThreadExecutor();
     private CircleImageView fingerprintImageView;
     private TextView instructionText;
     private TextView resultText;
     private View identifyButton;
     private View showStepsButton;
-
-    public String currentPhotoPath;
+    private Map<String, Bitmap> stepImgs;
 
     private boolean openCvLoaded = false;
 
@@ -97,9 +97,7 @@ public class MainActivity extends AppCompatActivity {
             try {
                 photoFile = createImageFile(".jpg");
             } catch (IOException e) {
-                // TODO: obsluga gdy nie da sie utworzyc pliku do zdjecia
-                // TODO: usuwanie zdjec po identyfikacji
-                e.printStackTrace();
+                Toast.makeText(MainActivity.this, "Blad tworzenia pliku (fingerprintImageView.onClick)", Toast.LENGTH_SHORT).show();
             }
             if (photoFile != null) {
                 Uri photoURI = FileProvider.getUriForFile(MainActivity.this,
@@ -128,7 +126,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private File createImageFile(String ext) throws IOException {
-        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.GERMANY).format(new Date());
+        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", new Locale("pl")).format(new Date());
         String imageFileName = "JPEG_" + timeStamp + "_";
         File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
         File image = File.createTempFile(
@@ -168,80 +166,88 @@ public class MainActivity extends AppCompatActivity {
 
     @RequiresApi(api = Build.VERSION_CODES.O)
     public void processPhoto(View view) {
-        resultText.setVisibility(View.INVISIBLE);
+        identifyButton.setVisibility(View.INVISIBLE);
         instructionText.setText(R.string.wait_tip);
 
-        testowa();
+        identify();
 
     }
 
     @RequiresApi(api = Build.VERSION_CODES.O)
-    private void testowa() {
+    private void identify() {
         executorService.execute(() -> {
 
             String result = "";
 
             if (openCvLoaded) {
-                ProcessImage pi = new ProcessImage("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/lw.png");
-//                ProcessImage pi = new ProcessImage(currentPhotoPath);
+                // przetworzenie zdjecia i osadzenie odpowiednich bitmap
+                ProcessImage pi = new ProcessImage(currentPhotoPath);
 
+                // usuniecie oryginalu przetworzonego zdjecia
+                boolean deleted = new File(currentPhotoPath).delete();
+                if (!deleted)
+                    Toast.makeText(MainActivity.this, "Blad usuwania (identify)", Toast.LENGTH_SHORT).show();
+
+                // zapisanie przetworzonego zdjecia do png
                 File temp = null;
                 try {
                     temp = createImageFile(".png");
                 } catch (IOException e) {
-                    // TODO: obsluga gdy nie da sie utworzyc pliku do zdjecia
                     // TODO: usuwanie zdjec po identyfikacji
-                    e.printStackTrace();
+                    Toast.makeText(MainActivity.this, "Blad tworzenia pliku (identify)", Toast.LENGTH_SHORT).show();
                 }
-
-                byte[] probeImage = new byte[0];
-                try {
-                    FileOutputStream fos = new FileOutputStream(temp);
-                    pi.getEnchanced().compress(Bitmap.CompressFormat.PNG, 100, fos);
-                    probeImage = Files.readAllBytes(temp.toPath());
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-                ////            try {
-////                FileOutputStream fos = new FileOutputStream(skeletonImg);
-////                pi.getEnchanced().compress(Bitmap.CompressFormat.PNG, 100, fos);
-////            } catch (IOException e) {
-////                e.printStackTrace();
-////            }
-
-                FingerprintTemplate probe = new FingerprintTemplate(
-                        new FingerprintImage()
-                                .dpi(500)
-                                .decode(probeImage));
-
-                File dirTemplates = new File("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Wzorce");
-
-                List<UserDetails> users = new ArrayList<>();
-
-                for (File file : dirTemplates.listFiles()) {
-                    byte[] serialized = new byte[0];
+                if (temp != null) {
                     try {
-                        serialized = Files.readAllBytes(file.toPath());
-                        FingerprintTemplate template = new FingerprintTemplate(serialized);
-                        users.add(new UserDetails(new Random().nextInt(150), file.getName(), template));
+                        FileOutputStream fos = new FileOutputStream(temp);
+                        pi.getEnchanced().compress(Bitmap.CompressFormat.PNG, 100, fos);
+                        fos.close();
                     } catch (IOException e) {
-                        e.printStackTrace();
+                        Toast.makeText(MainActivity.this, "Blad zapisu pliku (identify)", Toast.LENGTH_SHORT).show();
+                    }
+                }
+
+                // AFIS przetworzonego zdjecia
+                byte[] probeImage = null;
+                try {
+                    probeImage = Files.readAllBytes(new File(currentPhotoPath).toPath());
+                } catch (IOException e) {
+                    Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show();
+                }
+
+                if (probeImage != null) {
+
+                    FingerprintTemplate probe = new FingerprintTemplate(new FingerprintImage().dpi(500).decode(probeImage));
+
+                    // Wczytanie wzorcow do listy
+                    File dirTemplates = new File("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Wzorce");
+                    File[] files = dirTemplates.listFiles();
+
+                    List<UserDetails> users = new ArrayList<>();
+
+                    if (files != null) {
+                        for (File file : files) {
+                            try {
+                                byte[] serialized = Files.readAllBytes(file.toPath());
+                                FingerprintTemplate template = new FingerprintTemplate(serialized);
+                                users.add(new UserDetails(new Random().nextInt(150), file.getName(), template));
+                            } catch (IOException e) {
+                                Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show();
+                            }
+                        }
                     }
 
+                    // porownanie zdjecia z lista wzorcow
+                    UserDetails found = null;
+                    if (!users.isEmpty()) {
+                        found = find(probe, users);
+                    }
+
+                    if (found != null)
+                        result = found.name;
+                } else {
+                    Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show();
                 }
-
-                UserDetails found = find(probe, users);
-
-                if(found != null)
-                    result = found.name;
-
             }
-
-            // otworz tutaj zdjecie i wyslij do klasy przetwarzajacej obraz
-
-            // klasa co ma metody do przetwarzania tego obrazu
-            // i z tej klasy jest zwrocone imie osoby
-            // maja byc tez zwrocone obrazy poszczegolnych etapow (przypisac do odpowiednich pol statycznych ShowActivity)
 
             // po skonczeniu identyfikacji odswiezamy watek UI i konczymy prace (powracajac do watku UI)
             String finalResult = result;
@@ -257,27 +263,28 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+
 //    @RequiresApi(api = Build.VERSION_CODES.O)
 //    private void dodajBaze() {
 //        File dirImgs = new File("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Baza/Obrazy");
 //        File dirSkeletons = new File("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Baza/Szkielety");
 //        File dirTemplates = new File("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Baza/Wzorce");
 //
-//        for (File file : dirSkeletons.listFiles()) {
+//        for (File file : dirImgs.listFiles()) {
 ////        for (File file : dirImgs.listFiles()) {
-////            ProcessImage pi = new ProcessImage(file.toPath().toString());
-////
-////            int i = file.getName().lastIndexOf('.');
-////            String name = file.getName().substring(0, i);
-////
-////            File skeletonImg = new File(dirSkeletons, name + ".png");
-////
-////            try {
-////                FileOutputStream fos = new FileOutputStream(skeletonImg);
-////                pi.getEnchanced().compress(Bitmap.CompressFormat.PNG, 100, fos);
-////            } catch (IOException e) {
-////                e.printStackTrace();
-////            }
+//            ProcessImage pi = new ProcessImage(file.toPath().toString());
+//
+//            int i = file.getName().lastIndexOf('.');
+//            String name = file.getName().substring(0, i);
+//
+//            File skeletonImg = new File(dirSkeletons, name + ".png");
+//
+//            try {
+//                FileOutputStream fos = new FileOutputStream(skeletonImg);
+//                pi.getEnchanced().compress(Bitmap.CompressFormat.PNG, 100, fos);
+//            } catch (IOException e) {
+//                e.printStackTrace();
+//            }
 ////
 //            byte[] image = new byte[0];
 //            try {
@@ -313,18 +320,7 @@ public class MainActivity extends AppCompatActivity {
 
     public void showSteps(View view) {
         // uruchom nowe activity i tam wyswietlaj te zdj etapow ktore zostaly juz zainicjalizowane
-    }
 
-    static class UserDetails {
-        int id;
-        String name;
-        FingerprintTemplate template;
-
-        public UserDetails(int id, String name, FingerprintTemplate template) {
-            this.id = id;
-            this.name = name;
-            this.template = template;
-        }
     }
 
     UserDetails find(FingerprintTemplate probe, Iterable<UserDetails> candidates) {
@@ -340,6 +336,18 @@ public class MainActivity extends AppCompatActivity {
         }
         double threshold = 30;
         return high >= threshold ? match : null;
+    }
+
+    static class UserDetails {
+        int id;
+        String name;
+        FingerprintTemplate template;
+
+        public UserDetails(int id, String name, FingerprintTemplate template) {
+            this.id = id;
+            this.name = name;
+            this.template = template;
+        }
     }
 
 }

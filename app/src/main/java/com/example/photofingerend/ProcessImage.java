@@ -1,21 +1,18 @@
-
 package com.example.photofingerend;
 
 import android.graphics.Bitmap;
 import android.util.Log;
 
-import com.machinezoo.sourceafis.FingerprintMatcher;
-import com.machinezoo.sourceafis.FingerprintTemplate;
-
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
+import org.opencv.core.CvException;
 import org.opencv.core.CvType;
+import org.opencv.core.Mat;
 import org.opencv.core.MatOfDouble;
 import org.opencv.core.MatOfPoint;
+import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
-import org.opencv.core.CvException;
-import org.opencv.core.Mat;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.CLAHE;
 import org.opencv.imgproc.Imgproc;
@@ -26,6 +23,15 @@ import java.util.List;
 public class ProcessImage {
 
     private final Bitmap original;
+    //    private final Bitmap cropped;
+//    private final Bitmap resized;
+//    private final Bitmap skinMask;
+//    private final Bitmap gray;
+//    private final Bitmap grayMasked;
+//    private final Bitmap equalized;
+//    private final Bitmap ridgesMask;
+//    private final Bitmap filtered;
+//    private final Bitmap mask;
     private final Bitmap enhanced;
 
     public ProcessImage(String photoPath) {
@@ -42,10 +48,16 @@ public class ProcessImage {
         Bitmap bSrc = matToBmp(src);
         System.out.println("wyswietl oryginal brejkpojnt");
 
+        /// Wstepne przycinanie zdjecia do srodka do rozmiaru 1000x1000
+        Rect roi = new Rect(src.width() / 2 - 500, src.height() / 2 - 500, 1000, 1000);
+        Mat cropped = new Mat(src, roi);
+        Bitmap bCropped = matToBmp(cropped);
+        System.out.println("wyswietl bCropped brejkpojnt");
+
         /// Resize image (downscale)
         Size resizedSize = new Size(600, 600);
         Mat resized = new Mat();
-        Imgproc.resize(src, resized, resizedSize, 0, 0, Imgproc.INTER_AREA);
+        Imgproc.resize(cropped, resized, resizedSize, 0, 0, Imgproc.INTER_AREA);
         Bitmap bResized = matToBmp(resized);
         System.out.println("wyswietl resized brejkpojnt");
 
@@ -90,8 +102,7 @@ public class ProcessImage {
         /// Threshold the image with adaptive thresholding
         Mat threshed = new Mat();
         Imgproc.adaptiveThreshold(filtered, threshed, 255, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 1);
-
-        /// Invert image so ridges are black.
+        // Invert image so ridges are black.
         Core.bitwise_not(threshed, threshed);
         Bitmap bThreshed = grayMatToBmp(threshed);
         System.out.println("wyswietl bThreshed brejkpojnt");
@@ -192,7 +203,7 @@ public class ProcessImage {
         List<MatOfPoint> cnt = new ArrayList<>();
         cnt.add(contours.get(maxAreaIdx));
 
-        // wypelnienie najwiekszego konturu na bialo (na 1) TODO: zmienic na 1 z 255
+        // wypelnienie najwiekszego konturu na bialo (lub na 1)
         Mat skinMask = new Mat(_src.width(), _src.height(), CvType.CV_8U, Scalar.all(0));
         Imgproc.fillPoly(skinMask, cnt, Scalar.all(255));
 

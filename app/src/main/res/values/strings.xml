@@ -7,4 +7,5 @@
     <string name="show_steps_tip">Naciśnij \'POKAŻ ETAPY\', aby zobaczyć etapy przetwarzania.</string>
     <string name="wait_tip">Czekaj… Trwa identyfikowanie…</string>
     <string name="result_person">Osoba to: %1$s</string>
+    <string name="step_description">Krok: %1$s</string>
 </resources>
