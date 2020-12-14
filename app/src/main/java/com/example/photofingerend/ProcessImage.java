@@ -1,11 +1,6 @@
 package com.example.photofingerend;
 
-import android.graphics.Bitmap;
-import android.util.Log;
-
-import org.opencv.android.Utils;
 import org.opencv.core.Core;
-import org.opencv.core.CvException;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfDouble;
@@ -17,108 +12,78 @@ import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.CLAHE;
 import org.opencv.imgproc.Imgproc;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
 public class ProcessImage {
 
-    private final Bitmap original;
-    //    private final Bitmap cropped;
-//    private final Bitmap resized;
-//    private final Bitmap skinMask;
-//    private final Bitmap gray;
-//    private final Bitmap grayMasked;
-//    private final Bitmap equalized;
-//    private final Bitmap ridgesMask;
-//    private final Bitmap filtered;
-//    private final Bitmap mask;
-    private final Bitmap enhanced;
-
-    public ProcessImage(String photoPath) {
-        Mat original = Imgcodecs.imread(photoPath); // BGR order
-        this.original = matToBmp(original);
-
-        Mat enhanced = processImage(original);
-        this.enhanced = grayMatToBmp(enhanced);
+    public ProcessImage(String photoPath, String outDirPath) {
+        processImage(photoPath, outDirPath);
     }
 
-    public Mat processImage(Mat input) {
-        /// Original input
-        Mat src = input.clone();
-        Bitmap bSrc = matToBmp(src);
-        System.out.println("wyswietl oryginal brejkpojnt");
+    private void processImage(String inputPath, String outDirPath) {
+        /// Open file from supplied path
+        Mat src = Imgcodecs.imread(inputPath);
 
         /// Wstepne przycinanie zdjecia do srodka do rozmiaru 1000x1000
         Rect roi = new Rect(src.width() / 2 - 500, src.height() / 2 - 500, 1000, 1000);
         Mat cropped = new Mat(src, roi);
-        Bitmap bCropped = matToBmp(cropped);
-        System.out.println("wyswietl bCropped brejkpojnt");
+        Imgcodecs.imwrite(outDirPath+ File.separator+"cropped.png", cropped);
 
         /// Resize image (downscale)
         Size resizedSize = new Size(600, 600);
         Mat resized = new Mat();
         Imgproc.resize(cropped, resized, resizedSize, 0, 0, Imgproc.INTER_AREA);
-        Bitmap bResized = matToBmp(resized);
-        System.out.println("wyswietl resized brejkpojnt");
+        Imgcodecs.imwrite(outDirPath+ File.separator+"resized.png", resized);
 
         /// Get skin region
         Mat skinMask = getSkinMask(resized);
-        Bitmap bSkinMask = grayMatToBmp(skinMask);
-        System.out.println("wyswietl skinMask brejkpojnt");
+        Imgcodecs.imwrite(outDirPath+ File.separator+"skinMask.png", skinMask);
 
         /// Convert to grayscale
         Mat gray = new Mat();
         Imgproc.cvtColor(resized, gray, Imgproc.COLOR_BGR2GRAY);
-        Bitmap bGray = grayMatToBmp(gray);
-        System.out.println("wyswietl bGray brejkpojnt");
+        Imgcodecs.imwrite(outDirPath+ File.separator+"gray.png", gray);
 
         /// Apply mask
         Mat grayMasked = new Mat();
         Core.bitwise_and(gray, gray, grayMasked, skinMask);
-        Bitmap bGrayMasked = grayMatToBmp(grayMasked);
-        System.out.println("wyswietl bGrayMasked brejkpojnt");
+        Imgcodecs.imwrite(outDirPath+ File.separator+"grayMasked.png", grayMasked);
 
         /// Equalize histogram
         CLAHE clahe = Imgproc.createCLAHE(32.0, new Size(100, 100));
         Mat equalized = new Mat();
         clahe.apply(grayMasked, equalized);
-        Bitmap bEqualized = grayMatToBmp(equalized);
-        System.out.println("wyswietl bEqualized brejkpojnt");
+        Imgcodecs.imwrite(outDirPath+ File.separator+"equalized.png", equalized);
 
         /// Block size for processing
         int blockSize = 16;
 
         /// Get ridges mask
         Mat ridgesMask = findRidges(equalized, skinMask, blockSize, 0.35);
-        Bitmap bRidgesMask = grayMatToBmp(ridgesMask);
-        System.out.println("wyswietl bRidgesMask brejkpojnt");
+        Imgcodecs.imwrite(outDirPath+ File.separator+"ridgesMask.png", ridgesMask);
 
         /// Blur the equalized to remove noise and preserve edges
         Mat filtered = new Mat();
         Imgproc.bilateralFilter(equalized, filtered, 5, 200, 200);
-        Bitmap bFiltered = grayMatToBmp(filtered);
-        System.out.println("wyswietl bFiltered brejkpojnt");
+        Imgcodecs.imwrite(outDirPath+ File.separator+"filtered.png", filtered);
 
         /// Threshold the image with adaptive thresholding
         Mat threshed = new Mat();
         Imgproc.adaptiveThreshold(filtered, threshed, 255, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 1);
         // Invert image so ridges are black.
         Core.bitwise_not(threshed, threshed);
-        Bitmap bThreshed = grayMatToBmp(threshed);
-        System.out.println("wyswietl bThreshed brejkpojnt");
+        Imgcodecs.imwrite(outDirPath+ File.separator+"threshed.png", threshed);
 
         /// Merge two masks to not include something we do not want to process
         Mat mask = new Mat();
         Core.bitwise_and(skinMask, ridgesMask, mask);
-        Bitmap bMask = grayMatToBmp(mask);
-        System.out.println("wyswietl bMask brejkpojnt");
 
         /// Apply mask to threshed image
         Core.bitwise_and(threshed, mask, threshed);
-        bThreshed = grayMatToBmp(threshed);
-        System.out.println("wyswietl bThreshed2 brejkpojnt");
+        Imgcodecs.imwrite(outDirPath+ File.separator+"threshMasked.png", threshed);
 
-        return threshed;
     }
 
     private Mat findRidges(Mat src, Mat mask, int blockSize, double threshold) {
@@ -147,16 +112,6 @@ public class ProcessImage {
         Imgproc.erode(ridgeMask, ridgeMask, Mat.ones(new Size(51, 51), CvType.CV_8U));
 
         return ridgeMask;
-    }
-
-    private void testowaWypiszMat(Mat varianceImg) {
-        String ehh = "";
-        for (int i = 200; i < varianceImg.height() - 200; ++i) {
-            for (int j = 0; j < varianceImg.width(); ++j) {
-                ehh += Double.toString(varianceImg.get(i, j)[0]);
-            }
-            ehh += '\n';
-        }
     }
 
     private Mat getSkinMask(Mat src) {
@@ -208,59 +163,6 @@ public class ProcessImage {
         Imgproc.fillPoly(skinMask, cnt, Scalar.all(255));
 
         return skinMask;
-    }
-
-    private Bitmap matToBmp(Mat src) {
-        Mat _src = src.clone();
-        Bitmap bmp;
-        try {
-            bmp = Bitmap.createBitmap(_src.cols(), _src.rows(), Bitmap.Config.ARGB_8888);
-            Imgproc.cvtColor(_src, _src, Imgproc.COLOR_BGR2RGB);
-            Utils.matToBitmap(_src, bmp);
-            return bmp;
-        } catch (CvException e) {
-            Log.d("Exception", e.getMessage());
-            return null;
-        }
-    }
-
-    private Bitmap floatMatToBmp(Mat src) {
-        Mat _src = src.clone();
-        Bitmap bmp;
-        try {
-            bmp = Bitmap.createBitmap(_src.cols(), _src.rows(), Bitmap.Config.ARGB_8888);
-            _src.convertTo(_src, CvType.CV_8U);
-            Core.normalize(_src, _src, 0, 255, Core.NORM_MINMAX);
-            Imgproc.cvtColor(_src, _src, Imgproc.COLOR_GRAY2RGB);
-            Utils.matToBitmap(_src, bmp);
-            return bmp;
-        } catch (CvException e) {
-            Log.d("Exception", e.getMessage());
-            return null;
-        }
-    }
-
-    private Bitmap grayMatToBmp(Mat src) {
-        Mat _src = src.clone();
-        Bitmap bmp;
-        try {
-            bmp = Bitmap.createBitmap(_src.cols(), _src.rows(), Bitmap.Config.ARGB_8888);
-            Imgproc.cvtColor(_src, _src, Imgproc.COLOR_GRAY2RGB);
-            Utils.matToBitmap(_src, bmp);
-            return bmp;
-        } catch (CvException e) {
-            Log.d("Exception", e.getMessage());
-            return null;
-        }
-    }
-
-
-    public Bitmap getOriginal() {
-        return original;
-    }
-
-    public Bitmap getEnchanced() {
-        return enhanced;
     }
 
 }

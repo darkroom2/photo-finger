@@ -4,7 +4,6 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
@@ -13,7 +12,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
-import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
 
@@ -26,7 +24,6 @@ import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.text.SimpleDateFormat;
@@ -34,7 +31,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -44,14 +40,17 @@ import de.hdodenhof.circleimageview.CircleImageView;
 public class MainActivity extends AppCompatActivity {
 
     public static final int REQUEST_IMAGE_CAPTURE = 1;
-    public String currentPhotoPath;
-    ExecutorService executorService = Executors.newSingleThreadExecutor();
+
+    final ExecutorService executorService = Executors.newSingleThreadExecutor();
+
     private CircleImageView fingerprintImageView;
     private TextView instructionText;
     private TextView resultText;
     private View identifyButton;
     private View showStepsButton;
-    private Map<String, Bitmap> stepImgs;
+
+    public String currentPhotoPath;
+    public String outDirPath;
 
     private boolean openCvLoaded = false;
 
@@ -95,7 +94,7 @@ public class MainActivity extends AppCompatActivity {
             Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
             File photoFile = null;
             try {
-                photoFile = createImageFile(".jpg");
+                photoFile = createImageFile(".png");
             } catch (IOException e) {
                 Toast.makeText(MainActivity.this, "Blad tworzenia pliku (fingerprintImageView.onClick)", Toast.LENGTH_SHORT).show();
             }
@@ -127,7 +126,7 @@ public class MainActivity extends AppCompatActivity {
 
     private File createImageFile(String ext) throws IOException {
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", new Locale("pl")).format(new Date());
-        String imageFileName = "JPEG_" + timeStamp + "_";
+        String imageFileName = "TEMP_" + timeStamp + "_";
         File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
         File image = File.createTempFile(
                 imageFileName,
@@ -164,7 +163,6 @@ public class MainActivity extends AppCompatActivity {
         fingerprintImageView.setImageBitmap(bitmap);
     }
 
-    @RequiresApi(api = Build.VERSION_CODES.O)
     public void processPhoto(View view) {
         identifyButton.setVisibility(View.INVISIBLE);
         instructionText.setText(R.string.wait_tip);
@@ -173,46 +171,66 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-    @RequiresApi(api = Build.VERSION_CODES.O)
     private void identify() {
+        // Nowy watek do obliczen w tle aby nie zawieszac watku UI
         executorService.execute(() -> {
 
-            String result = "";
+            // domyslny wynik, nie znaleziono.
+            String result = "nie znaleziono.";
 
+            // jesli udalo sie zaladowac OpenCV to przechodzimy do przetwarzania
             if (openCvLoaded) {
-                // przetworzenie zdjecia i osadzenie odpowiednich bitmap
-                ProcessImage pi = new ProcessImage(currentPhotoPath);
+                // przygotowanie folderow wynikow przetwarzania
+                File outDir = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "output");
+                outDirPath = outDir.getAbsolutePath();
+
+                boolean success = true;
+                if (!outDir.exists()) {
+                    success = outDir.mkdirs();
+                }
+                if (!success) {
+                    Toast.makeText(MainActivity.this, "Blad tworzenia folderu (identify)", Toast.LENGTH_SHORT).show();
+                }
+
+                ProcessImage pi = new ProcessImage(currentPhotoPath, outDir.getAbsolutePath());
 
                 // usuniecie oryginalu przetworzonego zdjecia
+                // TODO usuniecie plikow etapow (po zamknieciu apki / po zrobieniu nowego zdjecia)
                 boolean deleted = new File(currentPhotoPath).delete();
                 if (!deleted)
                     Toast.makeText(MainActivity.this, "Blad usuwania (identify)", Toast.LENGTH_SHORT).show();
 
-                // zapisanie przetworzonego zdjecia do png
-                File temp = null;
-                try {
-                    temp = createImageFile(".png");
-                } catch (IOException e) {
-                    // TODO: usuwanie zdjec po identyfikacji
-                    Toast.makeText(MainActivity.this, "Blad tworzenia pliku (identify)", Toast.LENGTH_SHORT).show();
-                }
-                if (temp != null) {
-                    try {
-                        FileOutputStream fos = new FileOutputStream(temp);
-                        pi.getEnchanced().compress(Bitmap.CompressFormat.PNG, 100, fos);
-                        fos.close();
-                    } catch (IOException e) {
-                        Toast.makeText(MainActivity.this, "Blad zapisu pliku (identify)", Toast.LENGTH_SHORT).show();
-                    }
-                }
+//                // zapisanie przetworzonego zdjecia do png
+//                File temp = null;
+//                try {
+//                    temp = createImageFile(".png");
+//                } catch (IOException e) {
+//                    // TODO: usuwanie zdjec po identyfikacji
+//                    Toast.makeText(MainActivity.this, "Blad tworzenia pliku (identify)", Toast.LENGTH_SHORT).show();
+//                }
+//                if (temp != null) {
+//                    try {
+//                        FileOutputStream fos = new FileOutputStream(temp);
+//                        pi.getEnchanced().compress(Bitmap.CompressFormat.PNG, 100, fos);
+//                        fos.close();
+//                    } catch (IOException e) {
+//                        Toast.makeText(MainActivity.this, "Blad zapisu pliku (identify)", Toast.LENGTH_SHORT).show();
+//                    }
+//                }
 
                 // AFIS przetworzonego zdjecia
                 byte[] probeImage = null;
                 try {
-                    probeImage = Files.readAllBytes(new File(currentPhotoPath).toPath());
+                    probeImage = Files.readAllBytes(new File(outDir, "threshMasked.png").toPath());
                 } catch (IOException e) {
                     Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show();
                 }
+
+//                // usuniecie przetworzonego zdjecia po wczytaniu do AFISa
+//                deleted = new File(currentPhotoPath).delete();
+//                if (!deleted)
+//                    Toast.makeText(MainActivity.this, "Blad usuwania (identify)", Toast.LENGTH_SHORT).show();
+
 
                 if (probeImage != null) {
 
@@ -320,7 +338,9 @@ public class MainActivity extends AppCompatActivity {
 
     public void showSteps(View view) {
         // uruchom nowe activity i tam wyswietlaj te zdj etapow ktore zostaly juz zainicjalizowane
-
+        Intent intent = new Intent(this, ShowStepsActivity.class);
+        intent.putExtra("outDirPath", outDirPath);
+        startActivity(intent);
     }
 
     UserDetails find(FingerprintTemplate probe, Iterable<UserDetails> candidates) {
@@ -339,9 +359,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     static class UserDetails {
-        int id;
-        String name;
-        FingerprintTemplate template;
+        final int id;
+        final String name;
+        final FingerprintTemplate template;
 
         public UserDetails(int id, String name, FingerprintTemplate template) {
             this.id = id;
