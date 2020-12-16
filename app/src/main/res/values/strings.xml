@@ -1,11 +1,12 @@
 <resources>
-    <string name="app_name">PhotoFingerEnd</string>
+    <string name="app_name">PhotoFinger</string>
     <string name="instruction_text">Dotknij symbolu odcisku palca, aby zrobić zdjęcie.</string>
     <string name="identify">Identyfikuj!</string>
     <string name="show_steps">Pokaż etapy</string>
     <string name="identify_tip">Naciśnij \'IDENTYFIKUJ!\', aby rozpoznać osobę!</string>
     <string name="show_steps_tip">Naciśnij \'POKAŻ ETAPY\', aby zobaczyć etapy przetwarzania.</string>
     <string name="wait_tip">Czekaj… Trwa identyfikowanie…</string>
-    <string name="result_person">Osoba to: %1$s</string>
-    <string name="step_description">Krok: %1$s</string>
+    <string name="result_person">%1$s</string>
+    <string name="step_description">%1$s</string>
+    <string name="base_btn_text">Baza</string>
 </resources>

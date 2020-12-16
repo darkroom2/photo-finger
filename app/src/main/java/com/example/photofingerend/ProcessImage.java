@@ -1,6 +1,10 @@
 package com.example.photofingerend;
 
+import android.graphics.Bitmap;
+
+import org.opencv.android.Utils;
 import org.opencv.core.Core;
+import org.opencv.core.CvException;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfDouble;
@@ -18,72 +22,89 @@ import java.util.List;
 
 public class ProcessImage {
 
+    private final Bitmap result;
+
     public ProcessImage(String photoPath, String outDirPath) {
-        processImage(photoPath, outDirPath);
+        this.result = processImage(photoPath, outDirPath);
     }
 
-    private void processImage(String inputPath, String outDirPath) {
+    public ProcessImage(String photoPath) {
+        this.result = processImage(photoPath, null);
+    }
+
+    public Bitmap getResult() {
+        return result;
+    }
+
+
+    // TODO: dodac etapy przetwarzania (szkieletonizacja, minucje, mapa orientacji)
+    private Bitmap processImage(String inputPath, String outDirPath) {
         /// Open file from supplied path
         Mat src = Imgcodecs.imread(inputPath);
 
         /// Wstepne przycinanie zdjecia do srodka do rozmiaru 1000x1000
         Rect roi = new Rect(src.width() / 2 - 500, src.height() / 2 - 500, 1000, 1000);
         Mat cropped = new Mat(src, roi);
-        Imgcodecs.imwrite(outDirPath+ File.separator+"cropped.png", cropped);
 
         /// Resize image (downscale)
         Size resizedSize = new Size(600, 600);
         Mat resized = new Mat();
         Imgproc.resize(cropped, resized, resizedSize, 0, 0, Imgproc.INTER_AREA);
-        Imgcodecs.imwrite(outDirPath+ File.separator+"resized.png", resized);
 
         /// Get skin region
         Mat skinMask = getSkinMask(resized);
-        Imgcodecs.imwrite(outDirPath+ File.separator+"skinMask.png", skinMask);
 
         /// Convert to grayscale
         Mat gray = new Mat();
         Imgproc.cvtColor(resized, gray, Imgproc.COLOR_BGR2GRAY);
-        Imgcodecs.imwrite(outDirPath+ File.separator+"gray.png", gray);
 
         /// Apply mask
         Mat grayMasked = new Mat();
         Core.bitwise_and(gray, gray, grayMasked, skinMask);
-        Imgcodecs.imwrite(outDirPath+ File.separator+"grayMasked.png", grayMasked);
 
         /// Equalize histogram
         CLAHE clahe = Imgproc.createCLAHE(32.0, new Size(100, 100));
         Mat equalized = new Mat();
         clahe.apply(grayMasked, equalized);
-        Imgcodecs.imwrite(outDirPath+ File.separator+"equalized.png", equalized);
 
         /// Block size for processing
         int blockSize = 16;
 
         /// Get ridges mask
         Mat ridgesMask = findRidges(equalized, skinMask, blockSize, 0.35);
-        Imgcodecs.imwrite(outDirPath+ File.separator+"ridgesMask.png", ridgesMask);
 
         /// Blur the equalized to remove noise and preserve edges
         Mat filtered = new Mat();
         Imgproc.bilateralFilter(equalized, filtered, 5, 200, 200);
-        Imgcodecs.imwrite(outDirPath+ File.separator+"filtered.png", filtered);
 
         /// Threshold the image with adaptive thresholding
         Mat threshed = new Mat();
         Imgproc.adaptiveThreshold(filtered, threshed, 255, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 1);
         // Invert image so ridges are black.
         Core.bitwise_not(threshed, threshed);
-        Imgcodecs.imwrite(outDirPath+ File.separator+"threshed.png", threshed);
 
         /// Merge two masks to not include something we do not want to process
         Mat mask = new Mat();
         Core.bitwise_and(skinMask, ridgesMask, mask);
 
         /// Apply mask to threshed image
-        Core.bitwise_and(threshed, mask, threshed);
-        Imgcodecs.imwrite(outDirPath+ File.separator+"threshMasked.png", threshed);
+        Mat threshMasked = new Mat();
+        Core.bitwise_and(threshed, mask, threshMasked);
 
+        if (outDirPath != null) {
+            Imgcodecs.imwrite(outDirPath + File.separator + "0original.png", src);
+            Imgcodecs.imwrite(outDirPath + File.separator + "1resized.png", resized);
+            Imgcodecs.imwrite(outDirPath + File.separator + "2skinMask.png", skinMask);
+            Imgcodecs.imwrite(outDirPath + File.separator + "3gray.png", gray);
+//            Imgcodecs.imwrite(outDirPath + File.separator + "4grayMasked.png", grayMasked);
+            Imgcodecs.imwrite(outDirPath + File.separator + "5equalized.png", equalized);
+            Imgcodecs.imwrite(outDirPath + File.separator + "6ridgesMask.png", ridgesMask);
+            Imgcodecs.imwrite(outDirPath + File.separator + "7filtered.png", filtered);
+//            Imgcodecs.imwrite(outDirPath + File.separator + "8threshed.png", threshed);
+            Imgcodecs.imwrite(outDirPath + File.separator + "result.png", threshMasked);
+        }
+
+        return grayMatToBmp(threshMasked);
     }
 
     private Mat findRidges(Mat src, Mat mask, int blockSize, double threshold) {
@@ -99,7 +120,6 @@ public class ProcessImage {
 
         for (int x = 0; x < srcSize.width - blockSize; x += blockSize) {
             for (int y = 0; y < srcSize.height - blockSize; y += blockSize) {
-                // TODO: rozwiazac problem wyjscia poza tablice
                 Core.meanStdDev(src.submat(y, y + blockSize, x, x + blockSize), new MatOfDouble(), std, mask.submat(y, y + blockSize, x, x + blockSize));
                 double variance = std.toArray()[0];
                 varianceImg.submat(y, y + blockSize, x, x + blockSize).setTo(Scalar.all(variance));
@@ -163,6 +183,20 @@ public class ProcessImage {
         Imgproc.fillPoly(skinMask, cnt, Scalar.all(255));
 
         return skinMask;
+    }
+
+    private Bitmap grayMatToBmp(Mat src) {
+        Mat _src = src.clone();
+        Bitmap bmp;
+        try {
+            bmp = Bitmap.createBitmap(_src.cols(), _src.rows(), Bitmap.Config.ARGB_8888);
+            Imgproc.cvtColor(_src, _src, Imgproc.COLOR_GRAY2RGB);
+            Utils.matToBitmap(_src, bmp);
+            return bmp;
+        } catch (CvException e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 
 }
