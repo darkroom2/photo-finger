@@ -243,6 +243,7 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(MainActivity.this, "Blad tworzenia folderu (identify)", Toast.LENGTH_SHORT).show();
                 }
 
+//                ProcessImage pi = new ProcessImage("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Baza/Obrazy/Rado_Lewa_Maly_3.jpg", outDir.getAbsolutePath());
                 ProcessImage pi = new ProcessImage(currentPhotoPath, outDir.getAbsolutePath());
 
                 // usuniecie oryginalu przetworzonego zdjecia
@@ -319,6 +320,14 @@ public class MainActivity extends AppCompatActivity {
         startActivity(intent);
     }
 
+    public void updateDatabase(View view) {
+        view.setVisibility(View.INVISIBLE);
+        executorService.execute(() -> {
+            initDatabase();
+            runOnUiThread(() -> Toast.makeText(MainActivity.this, "Zaktualizowano baze!", Toast.LENGTH_SHORT).show());
+        });
+    }
+
     UserDetails find(FingerprintTemplate probe, Iterable<UserDetails> candidates) {
         FingerprintMatcher matcher = new FingerprintMatcher().index(probe);
         UserDetails match = null;
@@ -332,19 +341,6 @@ public class MainActivity extends AppCompatActivity {
         }
         double threshold = 30;
         return high >= threshold ? match : null;
-    }
-
-    public void pickPathToDatabase(View view) {
-//        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-//        i.addCategory(Intent.CATEGORY_DEFAULT);
-//        startActivityForResult(Intent.createChooser(i, "Choose directory"), REQUEST_PATH_PICK);
-        view.setVisibility(View.INVISIBLE);
-        executorService.execute(() -> {
-            initDatabase();
-            runOnUiThread(() -> {
-                Toast.makeText(MainActivity.this, "Zaktualizowano baze!", Toast.LENGTH_SHORT).show();
-            });
-        });
     }
 
     static class UserDetails {

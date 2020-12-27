@@ -1,6 +1,7 @@
 package com.example.photofingerend;
 
 import android.graphics.Bitmap;
+import android.util.Pair;
 
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
@@ -9,15 +10,18 @@ import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfDouble;
 import org.opencv.core.MatOfPoint;
+import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.CLAHE;
 import org.opencv.imgproc.Imgproc;
+import org.opencv.ximgproc.Ximgproc;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class ProcessImage {
@@ -36,14 +40,14 @@ public class ProcessImage {
         return result;
     }
 
-
-    // TODO: dodac etapy przetwarzania (szkieletonizacja, minucje, mapa orientacji)
+    // TODO: dodac etapy przetwarzania (rdzen i delta)
     private Bitmap processImage(String inputPath, String outDirPath) {
         /// Open file from supplied path
         Mat src = Imgcodecs.imread(inputPath);
 
         /// Wstepne przycinanie zdjecia do srodka do rozmiaru 1000x1000
-        Rect roi = new Rect(src.width() / 2 - 500, src.height() / 2 - 500, 1000, 1000);
+        // TODO: avoid using constants
+        Rect roi = new Rect(src.width() / 2 - 480, src.height() / 2 - 480, 960, 960);
         Mat cropped = new Mat(src, roi);
 
         /// Resize image (downscale)
@@ -71,15 +75,15 @@ public class ProcessImage {
         int blockSize = 16;
 
         /// Get ridges mask
-        Mat ridgesMask = findRidges(equalized, skinMask, blockSize, 0.35);
+        Mat ridgesMask = getRidgesMask(equalized, skinMask, blockSize, 0.35);
 
         /// Blur the equalized to remove noise and preserve edges
-        Mat filtered = new Mat();
-        Imgproc.bilateralFilter(equalized, filtered, 5, 200, 200);
+        Mat blurred = new Mat();
+        Imgproc.bilateralFilter(equalized, blurred, 5, 200, 200);
 
         /// Threshold the image with adaptive thresholding
         Mat threshed = new Mat();
-        Imgproc.adaptiveThreshold(filtered, threshed, 255, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 1);
+        Imgproc.adaptiveThreshold(blurred, threshed, 255, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 1);
         // Invert image so ridges are black.
         Core.bitwise_not(threshed, threshed);
 
@@ -91,23 +95,405 @@ public class ProcessImage {
         Mat threshMasked = new Mat();
         Core.bitwise_and(threshed, mask, threshMasked);
 
+        /// Get orientation map
+        Mat orientationMap = getOrientationMap(threshMasked, blockSize);
+        Mat visualisation = visualizeOrientationMap(resized, orientationMap, blockSize);
+
+        /// Calculate frequency
+        double frequency = getRidgeFrequency(threshMasked, orientationMap, blockSize, 5, 3, 15);
+
+        /// Gabor filter to remove noise
+        Mat gaborFiltered = getGaborFiltered(threshMasked, orientationMap, frequency);
+
+        /// Threshold gabor filtered image
+        Mat gaborThreshed = new Mat();
+        Imgproc.threshold(gaborFiltered, gaborThreshed, 128, 255, Imgproc.THRESH_BINARY);
+
+        /// Skeletonize gabor filtered thresholded image
+        gaborThreshed.convertTo(gaborThreshed, CvType.CV_8U);
+        Mat skeletonized = new Mat();
+        Ximgproc.thinning(gaborThreshed, skeletonized);
+
+        /// Find minutiaes
+        Mat minutiaes = findMinutiaes(skeletonized);
+
+//        Mat singularities = findSingularities(visualisation, orientationMap, blockSize);
+
         if (outDirPath != null) {
-            Imgcodecs.imwrite(outDirPath + File.separator + "0original.png", src);
-            Imgcodecs.imwrite(outDirPath + File.separator + "1resized.png", resized);
-            Imgcodecs.imwrite(outDirPath + File.separator + "2skinMask.png", skinMask);
-            Imgcodecs.imwrite(outDirPath + File.separator + "3gray.png", gray);
-//            Imgcodecs.imwrite(outDirPath + File.separator + "4grayMasked.png", grayMasked);
-            Imgcodecs.imwrite(outDirPath + File.separator + "5equalized.png", equalized);
-            Imgcodecs.imwrite(outDirPath + File.separator + "6ridgesMask.png", ridgesMask);
-            Imgcodecs.imwrite(outDirPath + File.separator + "7filtered.png", filtered);
-//            Imgcodecs.imwrite(outDirPath + File.separator + "8threshed.png", threshed);
+            Imgcodecs.imwrite(outDirPath + File.separator + "original.png", src);
+            Imgcodecs.imwrite(outDirPath + File.separator + "resized.png", resized);
+            Imgcodecs.imwrite(outDirPath + File.separator + "skinMask.png", skinMask);
+            Imgcodecs.imwrite(outDirPath + File.separator + "gray.png", gray);
+            Imgcodecs.imwrite(outDirPath + File.separator + "equalized.png", equalized);
+            Imgcodecs.imwrite(outDirPath + File.separator + "ridgesMask.png", ridgesMask);
+            Imgcodecs.imwrite(outDirPath + File.separator + "blurred.png", blurred);
             Imgcodecs.imwrite(outDirPath + File.separator + "result.png", threshMasked);
+            Imgcodecs.imwrite(outDirPath + File.separator + "visualisation.png", visualisation);
+            Imgcodecs.imwrite(outDirPath + File.separator + "gabor.png", gaborFiltered);
+            Imgcodecs.imwrite(outDirPath + File.separator + "gaborThreshed.png", gaborThreshed);
+            Imgcodecs.imwrite(outDirPath + File.separator + "skeletonized.png", skeletonized);
+            Imgcodecs.imwrite(outDirPath + File.separator + "minutiaes.png", minutiaes);
         }
 
         return grayMatToBmp(threshMasked);
     }
 
-    private Mat findRidges(Mat src, Mat mask, int blockSize, double threshold) {
+//    private Mat findSingularities(Mat visualisation, Mat orientationMap, int blockSize) {
+//        Mat result = visualisation.clone();
+//
+//        HashMap<String, Scalar> colors = new HashMap<>();
+//        colors.put("loop", new Scalar(0, 0, 255));
+//        colors.put("delta", new Scalar(0, 128, 255));
+//        colors.put("whorl", new Scalar(255, 153, 255));
+//
+//        for (int i = 3; i < orientationMap.rows() - 2; ++i) {
+//            for (int j = 3; j < orientationMap.cols() - 2; ++j) {
+//                String singularity = poincareIndexAt(i, j, orientationMap)
+//            }
+//        }
+//
+//    }
+    /*
+    def calculate_singularities(im, angles, tolerance, W, mask):
+    result = cv.cvtColor(im, cv.COLOR_GRAY2RGB)
+
+    # DELTA: RED, LOOP:ORAGNE, whorl:INK
+    colors = {"loop" : (0, 0, 255), "delta" : (0, 128, 255), "whorl": (255, 153, 255)}
+
+    for i in range(3, len(angles) - 2):             # Y
+        for j in range(3, len(angles[i]) - 2):      # x
+            # mask any singularity outside of the mask
+            mask_slice = mask[(i-2)*W:(i+3)*W, (j-2)*W:(j+3)*W]
+            mask_flag = np.sum(mask_slice)
+            if mask_flag == (W*5)**2:
+                singularity = poincare_index_at(i, j, angles, tolerance)
+                if singularity != "none":
+                    cv.rectangle(result, ((j+0)*W, (i+0)*W), ((j+1)*W, (i+1)*W), colors[singularity], 3)
+
+    return result
+     */
+
+    private Mat findMinutiaes(Mat skeletonized) {
+        int kernelSize = 3;
+
+        Mat minutiaeImg = new Mat();
+        Imgproc.cvtColor(skeletonized, minutiaeImg, Imgproc.COLOR_GRAY2RGB);
+
+        Mat skel = skeletonized.clone();
+        Mat mask = new Mat();
+        Core.compare(skel, Scalar.all(0), mask, Core.CMP_GT);
+
+        skel.setTo(Scalar.all(1), mask);
+
+        int rows = skel.rows();
+        int cols = skel.cols();
+
+        for (int i = kernelSize / 2; i < cols - kernelSize / 2; ++i) {
+            for (int j = kernelSize / 2; j < rows - kernelSize / 2; ++j) {
+                int cn = 0;
+                if (skel.get(j, i)[0] == 1) {
+                    cn += Math.abs(skel.get(j - 1, i - 1)[0] - skel.get(j - 1, i)[0]);
+                    cn += Math.abs(skel.get(j - 1, i)[0] - skel.get(j - 1, i + 1)[0]);
+                    cn += Math.abs(skel.get(j - 1, i + 1)[0] - skel.get(j, i + 1)[0]);
+                    cn += Math.abs(skel.get(j, i + 1)[0] - skel.get(j + 1, i + 1)[0]);
+                    cn += Math.abs(skel.get(j + 1, i + 1)[0] - skel.get(j + 1, i)[0]);
+                    cn += Math.abs(skel.get(j + 1, i)[0] - skel.get(j + 1, i - 1)[0]);
+                    cn += Math.abs(skel.get(j + 1, i - 1)[0] - skel.get(j, i - 1)[0]);
+                    cn += Math.abs(skel.get(j, i - 1)[0] - skel.get(j - 1, i - 1)[0]);
+                    cn = cn / 2;
+                    if (cn == 1) {
+                        Imgproc.circle(minutiaeImg, new Point(i, j), 3, new Scalar(0, 0, 150), 1);
+                    } else if (cn == 3) {
+                        Imgproc.circle(minutiaeImg, new Point(i, j), 3, new Scalar(0, 150, 0), 1);
+                    }
+                }
+            }
+        }
+        return minutiaeImg;
+    }
+    /*
+    def findMinutiaes(src, kernel_size=3):
+    minutiae_img = cv.cvtColor(src, cv.COLOR_GRAY2RGB)
+
+    # for crossing number method
+    my_src = np.int16(src.copy())
+    my_src[my_src > 0] = 1
+
+    rows, cols = my_src.shape[:2]
+
+    for i in range(kernel_size // 2, cols - kernel_size // 2):
+        for j in range(kernel_size // 2, rows - kernel_size // 2):
+            cn = 0
+            if my_src[j, i] == 1:  # If ridge..
+                cn += abs(my_src[j - 1, i - 1] - my_src[j - 1, i])
+                cn += abs(my_src[j - 1, i] - my_src[j - 1, i + 1])
+                cn += abs(my_src[j - 1, i + 1] - my_src[j, i + 1])
+                cn += abs(my_src[j, i + 1] - my_src[j + 1, i + 1])
+                cn += abs(my_src[j + 1, i + 1] - my_src[j + 1, i])
+                cn += abs(my_src[j + 1, i] - my_src[j + 1, i - 1])
+                cn += abs(my_src[j + 1, i - 1] - my_src[j, i - 1])
+                cn += abs(my_src[j, i - 1] - my_src[j - 1, i - 1])
+                cn = cn // 2
+                if cn == 1:
+                    cv.circle(minutiae_img, (i, j), radius=3, color=(0, 0, 150), thickness=1)
+                elif cn == 3:
+                    cv.circle(minutiae_img, (i, j), radius=3, color=(0, 150, 0), thickness=1)
+                else:
+                    continue
+
+    return minutiae_img
+     */
+
+    private Mat getGaborFiltered(Mat threshMasked, Mat orientationMap, double frequency) {
+        int rows = threshMasked.rows();
+        int cols = threshMasked.cols();
+
+        double kx = 0.65;
+        double ky = 0.65;
+
+        double sigmaX = kx / frequency;
+        double sigmaY = ky / frequency;
+
+        int rangeSize = (int) (Math.round(3 * Math.max(sigmaX, sigmaY)));
+        int size = (2 * rangeSize + 1);
+        Size filterSize = new Size(size, size);
+
+        int angleAcc = 3;
+
+        Mat[] filterBank = new Mat[180 / angleAcc];
+
+        for (int theta = 0; theta < filterBank.length; ++theta) {
+            filterBank[theta] = Imgproc.getGaborKernel(filterSize, sigmaX, Math.toRadians(theta * 3 + 90), 1 / frequency, 0.5, 0);
+        }
+
+        // finally, find where there is valid frequency data then do the filtering
+        Mat ridgeFilterImg = new Mat(threshMasked.size(), CvType.CV_32FC1);
+
+        // convert orientation matrix values from radians to an index value
+        // that corresponds to round(degrees/angleInc)
+        Mat orientIndexes = new Mat(orientationMap.rows(), orientationMap.cols(), CvType.CV_8UC1);
+        Core.multiply(orientationMap, Scalar.all((double) filterBank.length / Math.PI), orientIndexes, 1.0, CvType.CV_8UC1);
+
+        Mat orientMask;
+        Mat orientThreshold;
+
+        orientMask = new Mat(orientationMap.rows(), orientationMap.cols(), CvType.CV_8UC1, Scalar.all(0));
+        orientThreshold = new Mat(orientationMap.rows(), orientationMap.cols(), CvType.CV_8UC1, Scalar.all(0.0));
+        Core.compare(orientIndexes, orientThreshold, orientMask, Core.CMP_LT);
+        Core.add(orientIndexes, Scalar.all(filterBank.length), orientIndexes, orientMask);
+
+        orientMask = new Mat(orientationMap.rows(), orientationMap.cols(), CvType.CV_8UC1, Scalar.all(0));
+        orientThreshold = new Mat(orientationMap.rows(), orientationMap.cols(), CvType.CV_8UC1, Scalar.all(filterBank.length));
+        Core.compare(orientIndexes, orientThreshold, orientMask, Core.CMP_GE);
+        Core.subtract(orientIndexes, Scalar.all(filterBank.length), orientIndexes, orientMask);
+
+        // finally, find where there is valid frequency data then do the filtering
+        Mat value = new Mat(size, size, CvType.CV_32FC1);
+        Mat subSegment;
+        int orientIndex;
+        double sum;
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                if (r > (rangeSize + 1)
+                        && r < (rows - rangeSize - 1)
+                        && c > (rangeSize + 1)
+                        && c < (cols - rangeSize - 1)) {
+                    orientIndex = (int) orientIndexes.get(r / 16, c / 16)[0];
+                    subSegment = threshMasked.submat(r - rangeSize - 1, r + rangeSize, c - rangeSize - 1, c + rangeSize);
+                    Core.multiply(subSegment, filterBank[orientIndex], value, 1, CvType.CV_32F);
+                    sum = Core.sumElems(value).val[0];
+                    ridgeFilterImg.put(r, c, sum);
+                }
+            }
+        }
+
+        return ridgeFilterImg;
+    }
+
+    private double getRidgeFrequency(Mat ridgesImg, Mat orientationMap, int blockSize, int kernelSize, int minWaveLength, int maxWaveLength) {
+
+        int rows = ridgesImg.rows();
+        int cols = ridgesImg.cols();
+
+        Mat freqencies = new Mat(ridgesImg.size(), CvType.CV_32F);
+
+        // TODO: avoid processing masked data ?
+
+        for (int row = 0; row < rows - blockSize; row += blockSize) {
+            for (int col = 0; col < cols - blockSize; col += blockSize) {
+                Mat window = ridgesImg.submat(row, row + blockSize, col, col + blockSize);
+                double angle = orientationMap.get(row / blockSize, col / blockSize)[0];
+
+                double freq = getBlockFrequency(window, angle, kernelSize, minWaveLength, maxWaveLength);
+
+                freqencies.submat(row, row + blockSize, col, col + blockSize).setTo(Scalar.all(freq));
+            }
+        }
+
+        return myMedianFrequency(freqencies);
+    }
+
+    private double getBlockFrequency(Mat window, double angle, int kernelSize, int minWaveLength, int maxWaveLength) {
+        int rows = window.rows();
+        int cols = window.cols();
+
+        double angleDeg = Math.toDegrees(angle) + 90;
+
+        Point center = new Point(rows >> 1, cols >> 1);
+
+        Mat rotMat = Imgproc.getRotationMatrix2D(center, angleDeg, 1.0);
+
+        Mat rotated = new Mat();
+        Imgproc.warpAffine(window, rotated, rotMat, new Size(rows, cols));
+
+        int offset = (int) Math.ceil(rows * (0.5 - Math.sqrt(2) / 4));
+
+        Mat cropped = rotated.submat(offset, rows - offset, offset, cols - offset);
+
+        Mat ridgeSum = new Mat();
+        Core.reduce(cropped, ridgeSum, 0, Core.REDUCE_SUM, CvType.CV_32F);
+
+        Mat dilated = new Mat();
+        Imgproc.dilate(ridgeSum, dilated, Mat.ones(new Size(kernelSize, kernelSize), CvType.CV_8U), new Point(-1, -1), 1);
+
+        Mat ridgeNoise = new Mat();
+        Core.subtract(dilated, ridgeSum, ridgeNoise);
+
+        Mat peaks = new Mat();
+        Core.compare(ridgeNoise, Scalar.all(10), peaks, Core.CMP_LT);
+
+        Scalar ridgeSumMean = Core.mean(ridgeSum);
+
+        Mat aboveAvg = new Mat();
+        Core.compare(ridgeSum, ridgeSumMean, aboveAvg, Core.CMP_GT);
+
+        Mat ridges = new Mat();
+        Core.bitwise_and(peaks, aboveAvg, ridges);
+
+        int bufferSize = ridges.channels() * ridges.cols() * ridges.rows();
+        byte[] bRidges = new byte[bufferSize];
+        ridges.get(0, 0, bRidges); // get all the pixels
+
+        ArrayList<Integer> ridgeIndices = where(bRidges);
+
+        if (ridgeIndices.size() != 0) {
+            int peakCount = ridgeIndices.size();
+            if (peakCount >= 2) {
+                double waveLength = (double) (ridgeIndices.get(peakCount - 1) - ridgeIndices.get(0)) / (peakCount - 1);
+                if (waveLength >= minWaveLength && waveLength <= maxWaveLength) {
+                    return 1.0 / waveLength;
+                }
+            }
+        }
+        return 0.f;
+    }
+
+    private ArrayList<Integer> where(byte[] bRidges) {
+        ArrayList<Integer> result = new ArrayList<>();
+        for (int i = 0; i < bRidges.length; ++i) {
+            if (bRidges[i] < 0)
+                result.add(i);
+        }
+        return result;
+    }
+
+    private double myMedianFrequency(Mat image) {
+
+        ArrayList<Double> values = new ArrayList<>();
+        double value;
+
+        for (int r = 0; r < image.rows(); r++) {
+            for (int c = 0; c < image.cols(); c++) {
+                value = image.get(r, c)[0];
+                if (value > 0) {
+                    values.add(value);
+                }
+            }
+        }
+
+        Collections.sort(values);
+        int size = values.size();
+        double median = 0;
+
+        if (size > 0) {
+            int halfSize = size / 2;
+            if ((size % 2) == 0) {
+                median = (values.get(halfSize - 1) + values.get(halfSize)) / 2.0;
+            } else {
+                median = values.get(halfSize);
+            }
+        }
+        return median;
+    }
+
+    private Mat visualizeOrientationMap(Mat resized, Mat orientation, int blockSize) {
+        Mat result = resized.clone();
+        for (int i = 0; i < result.rows() - blockSize; i += blockSize) {
+            for (int j = 0; j < result.cols() - blockSize; j += blockSize) {
+                double tang = Math.tan(orientation.get(j / blockSize, i / blockSize)[0]);
+                Pair<Point, Point> line_ends = getLineEnds(i, j, blockSize, tang);
+                Imgproc.line(result, line_ends.first, line_ends.second, new Scalar(0, 0, 255), 1);
+            }
+        }
+        return result;
+    }
+
+    private Pair<Point, Point> getLineEnds(int i, int j, int blockSize, double tang) {
+        Point begin;
+        Point end;
+        if (tang >= -1 && tang <= 1) {
+            begin = new Point(i, (int) ((-blockSize / 2) * tang + j + blockSize / 2));
+            end = new Point(i + blockSize, (int) ((blockSize / 2) * tang + j + blockSize / 2));
+        } else {
+            begin = new Point((int) (i + blockSize / 2 + blockSize / (2 * tang)), j + (blockSize >> 1));
+            end = new Point((int) (i + blockSize / 2 - blockSize / (2 * tang)), j - (blockSize >> 1));
+        }
+        return new Pair<>(begin, end);
+    }
+
+    private Mat getOrientationMap(Mat threshMasked, int blockSize) {
+        int rows = threshMasked.rows();
+        int cols = threshMasked.cols();
+
+        // Create container element
+        Mat result = new Mat(rows / blockSize, cols / blockSize, CvType.CV_32F, Scalar.all(0));
+
+        // Get gradients
+        Mat gradX = new Mat();
+        Mat gradY = new Mat();
+        Imgproc.Sobel(threshMasked, gradX, CvType.CV_32F, 1, 0);
+        Imgproc.Sobel(threshMasked, gradY, CvType.CV_32F, 0, 1);
+
+        // Calculate orientations of gradients --> in degrees
+        for (int i = 0; i < rows - blockSize; i += blockSize) {
+            for (int j = 0; j < cols - blockSize; j += blockSize) {
+                Mat _gx = gradX.submat(i, i + blockSize, j, j + blockSize);
+                Mat _gy = gradY.submat(i, i + blockSize, j, j + blockSize);
+
+                Mat gxtgy = _gx.mul(_gy);
+
+                Mat gxtgyt2 = new Mat();
+                Core.multiply(gxtgy, new Scalar(2), gxtgyt2);
+
+                Mat gxsq = _gx.mul(_gx);
+                Mat gysq = _gy.mul(_gy);
+
+                Mat gxsqmgysq = new Mat();
+                Core.subtract(gxsq, gysq, gxsqmgysq);
+
+                double nom = Core.sumElems(gxtgyt2).val[0];
+                double denom = Core.sumElems(gxsqmgysq).val[0];
+
+                // TODO: dodac sprawdzanie czy zero zeby nei dzielic przez zero xd
+                // shift range to be 0 - 180 (line can rotate up to 180 deg)
+                double res = (Math.PI + Math.atan2(nom, denom)) / 2;
+                result.put(i / blockSize, j / blockSize, res);
+            }
+        }
+        return result;
+    }
+
+    private Mat getRidgesMask(Mat src, Mat mask, int blockSize, double threshold) {
         Size srcSize = src.size();
         Mat varianceImg = new Mat(srcSize, CvType.CV_32F);
         Mat ridgeMask = new Mat(srcSize, CvType.CV_8U);
@@ -190,6 +576,22 @@ public class ProcessImage {
         Bitmap bmp;
         try {
             bmp = Bitmap.createBitmap(_src.cols(), _src.rows(), Bitmap.Config.ARGB_8888);
+            Imgproc.cvtColor(_src, _src, Imgproc.COLOR_GRAY2RGB);
+            Utils.matToBitmap(_src, bmp);
+            return bmp;
+        } catch (CvException e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private Bitmap floatMatToBmp(Mat src) {
+        Mat _src = src.clone();
+        Bitmap bmp;
+        try {
+            bmp = Bitmap.createBitmap(_src.cols(), _src.rows(), Bitmap.Config.ARGB_8888);
+            Core.normalize(_src, _src, 0, 255, Core.NORM_MINMAX);
+            _src.convertTo(_src, CvType.CV_8U);
             Imgproc.cvtColor(_src, _src, Imgproc.COLOR_GRAY2RGB);
             Utils.matToBitmap(_src, bmp);
             return bmp;
