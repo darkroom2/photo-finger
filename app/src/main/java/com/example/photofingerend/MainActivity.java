@@ -7,6 +7,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.util.Pair;
 import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -30,11 +31,14 @@ import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 import de.hdodenhof.circleimageview.CircleImageView;
 
@@ -122,11 +126,77 @@ public class MainActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
     }
 
+    private void getStatistics(int threshold) {
+        File dirTemplates = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Baza/Wzorce");
+
+        File[] templates = dirTemplates.listFiles();
+
+        List<UserDetails> allUsers = new ArrayList<>();
+        Set<String> uniqueNames = new HashSet<>();
+
+        if (templates != null) {
+            for (File file : templates) {
+                String fileName = file.getName();
+                String nameWithoutExt = fileName.substring(0, fileName.indexOf('.'));
+                String nameWithoutId = nameWithoutExt.substring(0, nameWithoutExt.lastIndexOf('_'));
+                String fileId = nameWithoutExt.substring(nameWithoutExt.lastIndexOf('_') + 1);
+                uniqueNames.add(nameWithoutId);
+                try {
+                    byte[] serialized = Files.readAllBytes(file.toPath());
+                    FingerprintTemplate template = new FingerprintTemplate(serialized);
+                    allUsers.add(new UserDetails(Integer.parseInt(fileId), nameWithoutId, template));
+                } catch (IOException e) {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad wczytania pliku " + nameWithoutExt, Toast.LENGTH_SHORT).show());
+                }
+            }
+        }
+        double fmrValue = getFmrValue(threshold, allUsers, uniqueNames);
+
+        // FNMR zliczaj ile bylo niedopasowan wewnatrz klasy (konkretny palec konkretnej osoby)
+        int sumPairs = 0;
+        int sumMatches = 0;
+        for (UserDetails theUser : allUsers) {
+            List<UserDetails> otherUsers = allUsers.stream().filter(otherUser -> (otherUser.getName().contains(theUser.getName()) && otherUser.getId() != theUser.getId())).collect(Collectors.toList());
+            Pair<Integer, Integer> matchesAndPairs = getMatchesAndPairs(theUser, otherUsers, threshold);
+            int matches = matchesAndPairs.first;
+            int pairs = matchesAndPairs.second;
+
+            sumMatches += matches;
+            sumPairs += pairs;
+        }
+        double fnmrValue = (double) (sumPairs - sumMatches) / sumPairs;
+
+//        System.out.println(fmrValue);
+        System.out.println(fnmrValue);
+
+    }
+
+    private double getFmrValue(int threshold, List<UserDetails> allUsers, Set<String> uniqueNames) {
+        // FMR zliczaj ile bylo dopasowan i porownywanych par, podziel przez siebie (na dole pary)
+        int sumPairs = 0;
+        int sumMatches = 0;
+        for (String name : uniqueNames) {
+            List<UserDetails> theUsers = allUsers.stream().filter(user -> user.getName().contains(name)).collect(Collectors.toList());
+            List<UserDetails> otherUsers = allUsers.stream().filter(user -> !user.getName().contains(name)).collect(Collectors.toList());
+            for (UserDetails theUser : theUsers) {
+                Pair<Integer, Integer> matchesAndPairs = getMatchesAndPairs(theUser, otherUsers, threshold);
+                int matches = matchesAndPairs.first;
+                int pairs = matchesAndPairs.second;
+
+                sumMatches += matches;
+                sumPairs += pairs;
+            }
+        }
+        if (sumPairs == 0)
+            return 0;
+        return (double) (sumMatches) / sumPairs;
+    }
+
     private void initDatabase() {
         /// przejrzec liste wzorcow i usunac ze zdjec pliki o nazwie wzorca
         // Wczytanie wzorcow do listy
-        File dirTemplates = new File("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Baza/Wzorce");
-        File dirImgs = new File("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Baza/Obrazy");
+        File dirTemplates = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Baza/Wzorce");
+        File dirImgs = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Baza/Obrazy");
         File[] templateFiles = dirTemplates.listFiles();
         // usuniecie przetworzonych plikow
         if (templateFiles != null) {
@@ -138,7 +208,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // normalnie przetworzyc folder zdjec do szkieletow, szkielety do wzorcow.
-        File dirSkeletons = new File("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Baza/Szkielety");
+        File dirSkeletons = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Baza/Szkielety");
         File[] imgFiles = dirImgs.listFiles();
 
         if (imgFiles != null) {
@@ -243,7 +313,6 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(MainActivity.this, "Blad tworzenia folderu (identify)", Toast.LENGTH_SHORT).show();
                 }
 
-//                ProcessImage pi = new ProcessImage("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Baza/Obrazy/Rado_Lewa_Maly_3.jpg", outDir.getAbsolutePath());
                 ProcessImage pi = new ProcessImage(currentPhotoPath, outDir.getAbsolutePath());
 
                 // usuniecie oryginalu przetworzonego zdjecia
@@ -254,7 +323,7 @@ public class MainActivity extends AppCompatActivity {
                 // AFIS przetworzonego zdjecia
                 byte[] probeImage = null;
                 try {
-                    probeImage = Files.readAllBytes(new File(outDir, "result.png").toPath());
+                    probeImage = Files.readAllBytes(new File(outDir, "7result.png").toPath());
                 } catch (IOException e) {
                     Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show();
                 }
@@ -264,8 +333,7 @@ public class MainActivity extends AppCompatActivity {
                     FingerprintTemplate probe = new FingerprintTemplate(new FingerprintImage().dpi(500).decode(probeImage));
 
                     // Wczytanie wzorcow do listy
-                    // TODO: usunac absolute path
-                    File dirTemplates = new File("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Baza/Wzorce");
+                    File dirTemplates = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Baza/Wzorce");
                     File[] files = dirTemplates.listFiles();
 
                     List<UserDetails> users = new ArrayList<>();
@@ -320,11 +388,25 @@ public class MainActivity extends AppCompatActivity {
         startActivity(intent);
     }
 
+    public void updateStatistics(View view) {
+        view.setVisibility(View.INVISIBLE);
+        executorService.execute(() -> {
+            getStatistics(30);
+            runOnUiThread(() -> {
+                view.setVisibility(View.VISIBLE);
+                Toast.makeText(MainActivity.this, "Zaktualizowano statystyki!", Toast.LENGTH_SHORT).show();
+            });
+        });
+    }
+
     public void updateDatabase(View view) {
         view.setVisibility(View.INVISIBLE);
         executorService.execute(() -> {
             initDatabase();
-            runOnUiThread(() -> Toast.makeText(MainActivity.this, "Zaktualizowano baze!", Toast.LENGTH_SHORT).show());
+            runOnUiThread(() -> {
+                view.setVisibility(View.VISIBLE);
+                Toast.makeText(MainActivity.this, "Zaktualizowano baze!", Toast.LENGTH_SHORT).show();
+            });
         });
     }
 
@@ -343,6 +425,20 @@ public class MainActivity extends AppCompatActivity {
         return high >= threshold ? match : null;
     }
 
+    Pair<Integer, Integer> getMatchesAndPairs(UserDetails probe, Iterable<UserDetails> candidates, int threshold) {
+        FingerprintMatcher matcher = new FingerprintMatcher().index(probe.getTemplate());
+        int pairsCount = 0;
+        int matchesCount = 0;
+        for (UserDetails candidate : candidates) {
+            ++pairsCount;
+            double score = matcher.match(candidate.template);
+            if (score >= threshold) {
+                ++matchesCount;
+            }
+        }
+        return new Pair<>(matchesCount, pairsCount);
+    }
+
     static class UserDetails {
         final int id;
         final String name;
@@ -352,6 +448,18 @@ public class MainActivity extends AppCompatActivity {
             this.id = id;
             this.name = name;
             this.template = template;
+        }
+
+        public int getId() {
+            return id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public FingerprintTemplate getTemplate() {
+            return template;
         }
     }
 

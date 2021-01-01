@@ -40,13 +40,11 @@ public class ProcessImage {
         return result;
     }
 
-    // TODO: dodac etapy przetwarzania (rdzen i delta)
     private Bitmap processImage(String inputPath, String outDirPath) {
         /// Open file from supplied path
         Mat src = Imgcodecs.imread(inputPath);
 
         /// Wstepne przycinanie zdjecia do srodka do rozmiaru 1000x1000
-        // TODO: avoid using constants
         Rect roi = new Rect(src.width() / 2 - 480, src.height() / 2 - 480, 960, 960);
         Mat cropped = new Mat(src, roi);
 
@@ -95,83 +93,45 @@ public class ProcessImage {
         Mat threshMasked = new Mat();
         Core.bitwise_and(threshed, mask, threshMasked);
 
-        /// Get orientation map
-        Mat orientationMap = getOrientationMap(threshMasked, blockSize);
-        Mat visualisation = visualizeOrientationMap(resized, orientationMap, blockSize);
-
-        /// Calculate frequency
-        double frequency = getRidgeFrequency(threshMasked, orientationMap, blockSize, 5, 3, 15);
-
-        /// Gabor filter to remove noise
-        Mat gaborFiltered = getGaborFiltered(threshMasked, orientationMap, frequency);
-
-        /// Threshold gabor filtered image
-        Mat gaborThreshed = new Mat();
-        Imgproc.threshold(gaborFiltered, gaborThreshed, 128, 255, Imgproc.THRESH_BINARY);
-
-        /// Skeletonize gabor filtered thresholded image
-        gaborThreshed.convertTo(gaborThreshed, CvType.CV_8U);
-        Mat skeletonized = new Mat();
-        Ximgproc.thinning(gaborThreshed, skeletonized);
-
-        /// Find minutiaes
-        Mat minutiaes = findMinutiaes(skeletonized);
-
-//        Mat singularities = findSingularities(visualisation, orientationMap, blockSize);
+//        /// Get orientation map
+//        Mat orientationMap = getOrientationMap(threshMasked, blockSize);
+//        Mat visualisation = visualizeOrientationMap(resized, orientationMap, blockSize);
+//
+//        /// Calculate frequency
+//        double frequency = getRidgeFrequency(threshMasked, orientationMap, blockSize, 5, 3, 15);
+//
+//        /// Gabor filter to remove noise
+//        Mat gaborFiltered = getGaborFiltered(threshMasked, orientationMap, frequency);
+//
+//        /// Threshold gabor filtered image
+//        Mat gaborThreshed = new Mat();
+//        Imgproc.threshold(gaborFiltered, gaborThreshed, 128, 255, Imgproc.THRESH_BINARY);
+//
+//        /// Skeletonize gabor filtered thresholded image
+//        gaborThreshed.convertTo(gaborThreshed, CvType.CV_8U);
+//        Mat skeletonized = new Mat();
+//        Ximgproc.thinning(gaborThreshed, skeletonized);
+//
+//        /// Find minutiaes
+//        Mat minutiaes = findMinutiaes(skeletonized);
 
         if (outDirPath != null) {
-            Imgcodecs.imwrite(outDirPath + File.separator + "original.png", src);
-            Imgcodecs.imwrite(outDirPath + File.separator + "resized.png", resized);
-            Imgcodecs.imwrite(outDirPath + File.separator + "skinMask.png", skinMask);
-            Imgcodecs.imwrite(outDirPath + File.separator + "gray.png", gray);
-            Imgcodecs.imwrite(outDirPath + File.separator + "equalized.png", equalized);
-            Imgcodecs.imwrite(outDirPath + File.separator + "ridgesMask.png", ridgesMask);
-            Imgcodecs.imwrite(outDirPath + File.separator + "blurred.png", blurred);
-            Imgcodecs.imwrite(outDirPath + File.separator + "result.png", threshMasked);
-            Imgcodecs.imwrite(outDirPath + File.separator + "visualisation.png", visualisation);
-            Imgcodecs.imwrite(outDirPath + File.separator + "gabor.png", gaborFiltered);
-            Imgcodecs.imwrite(outDirPath + File.separator + "gaborThreshed.png", gaborThreshed);
-            Imgcodecs.imwrite(outDirPath + File.separator + "skeletonized.png", skeletonized);
-            Imgcodecs.imwrite(outDirPath + File.separator + "minutiaes.png", minutiaes);
+            Imgcodecs.imwrite(outDirPath + File.separator + "0src.png", src);
+            Imgcodecs.imwrite(outDirPath + File.separator + "1resized.png", resized);
+            Imgcodecs.imwrite(outDirPath + File.separator + "2skinMask.png", skinMask);
+            Imgcodecs.imwrite(outDirPath + File.separator + "3grayMasked.png", grayMasked);
+            Imgcodecs.imwrite(outDirPath + File.separator + "4equalized.png", equalized);
+            Imgcodecs.imwrite(outDirPath + File.separator + "5ridgesMask.png", ridgesMask);
+            Imgcodecs.imwrite(outDirPath + File.separator + "6blurred.png", blurred);
+            Imgcodecs.imwrite(outDirPath + File.separator + "7result.png", threshMasked);
+//            Imgcodecs.imwrite(outDirPath + File.separator + "visualisation.png", visualisation);
+//            Imgcodecs.imwrite(outDirPath + File.separator + "gaborThreshed.png", gaborThreshed);
+//            Imgcodecs.imwrite(outDirPath + File.separator + "skeletonized.png", skeletonized);
+//            Imgcodecs.imwrite(outDirPath + File.separator + "minutiaes.png", minutiaes);
         }
 
         return grayMatToBmp(threshMasked);
     }
-
-//    private Mat findSingularities(Mat visualisation, Mat orientationMap, int blockSize) {
-//        Mat result = visualisation.clone();
-//
-//        HashMap<String, Scalar> colors = new HashMap<>();
-//        colors.put("loop", new Scalar(0, 0, 255));
-//        colors.put("delta", new Scalar(0, 128, 255));
-//        colors.put("whorl", new Scalar(255, 153, 255));
-//
-//        for (int i = 3; i < orientationMap.rows() - 2; ++i) {
-//            for (int j = 3; j < orientationMap.cols() - 2; ++j) {
-//                String singularity = poincareIndexAt(i, j, orientationMap)
-//            }
-//        }
-//
-//    }
-    /*
-    def calculate_singularities(im, angles, tolerance, W, mask):
-    result = cv.cvtColor(im, cv.COLOR_GRAY2RGB)
-
-    # DELTA: RED, LOOP:ORAGNE, whorl:INK
-    colors = {"loop" : (0, 0, 255), "delta" : (0, 128, 255), "whorl": (255, 153, 255)}
-
-    for i in range(3, len(angles) - 2):             # Y
-        for j in range(3, len(angles[i]) - 2):      # x
-            # mask any singularity outside of the mask
-            mask_slice = mask[(i-2)*W:(i+3)*W, (j-2)*W:(j+3)*W]
-            mask_flag = np.sum(mask_slice)
-            if mask_flag == (W*5)**2:
-                singularity = poincare_index_at(i, j, angles, tolerance)
-                if singularity != "none":
-                    cv.rectangle(result, ((j+0)*W, (i+0)*W), ((j+1)*W, (i+1)*W), colors[singularity], 3)
-
-    return result
-     */
 
     private Mat findMinutiaes(Mat skeletonized) {
         int kernelSize = 3;
@@ -211,38 +171,6 @@ public class ProcessImage {
         }
         return minutiaeImg;
     }
-    /*
-    def findMinutiaes(src, kernel_size=3):
-    minutiae_img = cv.cvtColor(src, cv.COLOR_GRAY2RGB)
-
-    # for crossing number method
-    my_src = np.int16(src.copy())
-    my_src[my_src > 0] = 1
-
-    rows, cols = my_src.shape[:2]
-
-    for i in range(kernel_size // 2, cols - kernel_size // 2):
-        for j in range(kernel_size // 2, rows - kernel_size // 2):
-            cn = 0
-            if my_src[j, i] == 1:  # If ridge..
-                cn += abs(my_src[j - 1, i - 1] - my_src[j - 1, i])
-                cn += abs(my_src[j - 1, i] - my_src[j - 1, i + 1])
-                cn += abs(my_src[j - 1, i + 1] - my_src[j, i + 1])
-                cn += abs(my_src[j, i + 1] - my_src[j + 1, i + 1])
-                cn += abs(my_src[j + 1, i + 1] - my_src[j + 1, i])
-                cn += abs(my_src[j + 1, i] - my_src[j + 1, i - 1])
-                cn += abs(my_src[j + 1, i - 1] - my_src[j, i - 1])
-                cn += abs(my_src[j, i - 1] - my_src[j - 1, i - 1])
-                cn = cn // 2
-                if cn == 1:
-                    cv.circle(minutiae_img, (i, j), radius=3, color=(0, 0, 150), thickness=1)
-                elif cn == 3:
-                    cv.circle(minutiae_img, (i, j), radius=3, color=(0, 150, 0), thickness=1)
-                else:
-                    continue
-
-    return minutiae_img
-     */
 
     private Mat getGaborFiltered(Mat threshMasked, Mat orientationMap, double frequency) {
         int rows = threshMasked.rows();
@@ -528,8 +456,8 @@ public class ProcessImage {
         Imgproc.cvtColor(_src, imgHsv, Imgproc.COLOR_BGR2HSV);
 
         // gorne i dolne granice koloru skory czlowieka (w HSV)
-        Scalar lowerBounds = new Scalar(0, 10, 60);
-        Scalar upperBounds = new Scalar(25, 220, 255);
+        Scalar lowerBounds = new Scalar(0, 30, 100);
+        Scalar upperBounds = new Scalar(30, 200, 255);
 
         // maskowanie pikseli nie znajdujacych sie w granicach koloru skory
         Mat mask = new Mat();
