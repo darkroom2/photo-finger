@@ -456,8 +456,8 @@ public class ProcessImage {
         Imgproc.cvtColor(_src, imgHsv, Imgproc.COLOR_BGR2HSV);
 
         // gorne i dolne granice koloru skory czlowieka (w HSV)
-        Scalar lowerBounds = new Scalar(0, 30, 100);
-        Scalar upperBounds = new Scalar(30, 200, 255);
+        Scalar lowerBounds = new Scalar(0, 30, 120);
+        Scalar upperBounds = new Scalar(35, 180, 255);
 
         // maskowanie pikseli nie znajdujacych sie w granicach koloru skory
         Mat mask = new Mat();
