@@ -12,6 +12,7 @@ import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.IntRange;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
@@ -19,6 +20,7 @@ import androidx.core.content.FileProvider;
 import com.machinezoo.sourceafis.FingerprintImage;
 import com.machinezoo.sourceafis.FingerprintMatcher;
 import com.machinezoo.sourceafis.FingerprintTemplate;
+import com.opencsv.CSVWriter;
 
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.LoaderCallbackInterface;
@@ -27,7 +29,9 @@ import org.opencv.android.OpenCVLoader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.Writer;
 import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -39,6 +43,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import de.hdodenhof.circleimageview.CircleImageView;
 
@@ -150,8 +155,34 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         }
-        double fmrValue = getFmrValue(threshold, allUsers, uniqueNames);
+//        double fmrValue = getFmrValue(threshold, allUsers, uniqueNames);
+//        double fnmrValue = getFnmrValue(threshold, allUsers);
 
+        try (
+                Writer writer = Files.newBufferedWriter(Paths.get(new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "roc.csv").getAbsolutePath()));
+                CSVWriter csvWriter = new CSVWriter(writer);
+        ) {
+            String[] headerRecord = {"Threshold", "FMR", "FNMR"};
+            csvWriter.writeNext(headerRecord);
+
+            IntStream.range(0, 50).forEach(
+                    i -> csvWriter.writeNext(
+                            new String[]
+                                    {
+                                            Integer.toString(i),
+                                            String.format(new Locale("pl"), "%.10f", getFmrValue(i, allUsers, uniqueNames)),
+                                            String.format(new Locale("pl"), "%.10f", getFnmrValue(i, allUsers))
+                                    }
+                    )
+            );
+
+        } catch (IOException e) {
+            runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad zapisu do csv", Toast.LENGTH_SHORT).show());
+        }
+
+    }
+
+    private double getFnmrValue(int threshold, List<UserDetails> allUsers) {
         // FNMR zliczaj ile bylo niedopasowan wewnatrz klasy (konkretny palec konkretnej osoby)
         int sumPairs = 0;
         int sumMatches = 0;
@@ -164,11 +195,9 @@ public class MainActivity extends AppCompatActivity {
             sumMatches += matches;
             sumPairs += pairs;
         }
-        double fnmrValue = (double) (sumPairs - sumMatches) / sumPairs;
-
-//        System.out.println(fmrValue);
-        System.out.println(fnmrValue);
-
+        if (sumPairs == 0)
+            return 0;
+        return (double) (sumPairs - sumMatches) / sumPairs;
     }
 
     private double getFmrValue(int threshold, List<UserDetails> allUsers, Set<String> uniqueNames) {
@@ -239,7 +268,7 @@ public class MainActivity extends AppCompatActivity {
                     fosTempl.close();
 
                 } catch (IOException e) {
-                    Toast.makeText(MainActivity.this, "Blad tworzenia wzorca (initDatabase)", Toast.LENGTH_SHORT).show();
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad tworzenia wzorca (initDatabase)", Toast.LENGTH_SHORT).show());
                 }
             }
         }
@@ -325,7 +354,7 @@ public class MainActivity extends AppCompatActivity {
                 try {
                     probeImage = Files.readAllBytes(new File(outDir, "7result.png").toPath());
                 } catch (IOException e) {
-                    Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show();
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show());
                 }
 
                 if (probeImage != null) {
@@ -345,7 +374,7 @@ public class MainActivity extends AppCompatActivity {
                                 FingerprintTemplate template = new FingerprintTemplate(serialized);
                                 users.add(new UserDetails(new Random().nextInt(150), file.getName(), template));
                             } catch (IOException e) {
-                                Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show();
+                                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show());
                             }
                         }
                     }
