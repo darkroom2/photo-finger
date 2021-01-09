@@ -131,7 +131,7 @@ public class MainActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
     }
 
-    private void getStatistics(int threshold) {
+     private void getStatistics() {
         File dirTemplates = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Baza/Wzorce");
 
         File[] templates = dirTemplates.listFiles();
@@ -155,8 +155,8 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         }
-//        double fmrValue = getFmrValue(threshold, allUsers, uniqueNames);
-//        double fnmrValue = getFnmrValue(threshold, allUsers);
+//        double fmrValue = getFmrValue(30, allUsers, uniqueNames);
+//        double fnmrValue = getFnmrValue(30, allUsers);
 
         try (
                 Writer writer = Files.newBufferedWriter(Paths.get(new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "roc.csv").getAbsolutePath()));
@@ -165,15 +165,18 @@ public class MainActivity extends AppCompatActivity {
             String[] headerRecord = {"Threshold", "FMR", "FNMR"};
             csvWriter.writeNext(headerRecord);
 
-            IntStream.range(0, 50).forEach(
-                    i -> csvWriter.writeNext(
-                            new String[]
-                                    {
-                                            Integer.toString(i),
-                                            String.format(new Locale("pl"), "%.10f", getFmrValue(i, allUsers, uniqueNames)),
-                                            String.format(new Locale("pl"), "%.10f", getFnmrValue(i, allUsers))
-                                    }
-                    )
+            IntStream.range(1, 51).forEach(
+                    i -> {
+                        csvWriter.writeNext(
+                                new String[]
+                                        {
+                                                Integer.toString(i),
+                                                String.format(new Locale("pl"), "%.10f", getFmrValue(i, allUsers, uniqueNames)),
+                                                String.format(new Locale("pl"), "%.10f", getFnmrValue(i, allUsers))
+                                        }
+                        );
+                        runOnUiThread(() -> Toast.makeText(MainActivity.this, Integer.toString(i), Toast.LENGTH_SHORT).show());
+                    }
             );
 
         } catch (IOException e) {
@@ -258,7 +261,7 @@ public class MainActivity extends AppCompatActivity {
                     byte[] image = Files.readAllBytes(skeletonImg.toPath());
                     FingerprintTemplate template = new FingerprintTemplate(
                             new FingerprintImage()
-                                    .dpi(500)
+                                    .dpi(415)
                                     .decode(image));
                     byte[] serialized = template.toByteArray();
 
@@ -284,7 +287,8 @@ public class MainActivity extends AppCompatActivity {
                 storageDir
         );
 
-        currentPhotoPath = image.getAbsolutePath();
+        currentPhotoPath = "/storage/emulated/0/Android/data/com.example.photofingerend/files/Baza/Inz_Rado_Lewa_Wskazujacy12.jpg";
+//        currentPhotoPath = image.getAbsolutePath();
         return image;
     }
 
@@ -359,7 +363,7 @@ public class MainActivity extends AppCompatActivity {
 
                 if (probeImage != null) {
 
-                    FingerprintTemplate probe = new FingerprintTemplate(new FingerprintImage().dpi(500).decode(probeImage));
+                    FingerprintTemplate probe = new FingerprintTemplate(new FingerprintImage().dpi(415).decode(probeImage));
 
                     // Wczytanie wzorcow do listy
                     File dirTemplates = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Baza/Wzorce");
@@ -420,7 +424,7 @@ public class MainActivity extends AppCompatActivity {
     public void updateStatistics(View view) {
         view.setVisibility(View.INVISIBLE);
         executorService.execute(() -> {
-            getStatistics(30);
+            getStatistics();
             runOnUiThread(() -> {
                 view.setVisibility(View.VISIBLE);
                 Toast.makeText(MainActivity.this, "Zaktualizowano statystyki!", Toast.LENGTH_SHORT).show();

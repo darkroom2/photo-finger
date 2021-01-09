@@ -81,39 +81,57 @@ public class ProcessImage {
 
         /// Threshold the image with adaptive thresholding
         Mat threshed = new Mat();
-        Imgproc.adaptiveThreshold(blurred, threshed, 255, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 1);
-        // Invert image so ridges are black.
-        Core.bitwise_not(threshed, threshed);
+        Imgproc.adaptiveThreshold(blurred, threshed, 255, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY_INV , 11, 1);
+
+        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE,new Size(3, 3));
+        Imgproc.morphologyEx(threshed, threshed, Imgproc.MORPH_CLOSE, kernel);
+        Imgproc.morphologyEx(threshed, threshed, Imgproc.MORPH_CLOSE, kernel);
+        Imgproc.morphologyEx(threshed, threshed, Imgproc.MORPH_OPEN, kernel);
+        Imgproc.morphologyEx(threshed, threshed, Imgproc.MORPH_OPEN, kernel);
+        Imgproc.morphologyEx(threshed, threshed, Imgproc.MORPH_CLOSE, kernel);
+        Imgproc.morphologyEx(threshed, threshed, Imgproc.MORPH_OPEN, kernel);
+
+        Bitmap xd = grayMatToBmp(threshed);
+        System.out.println('x');
 
         /// Merge two masks to not include something we do not want to process
         Mat mask = new Mat();
         Core.bitwise_and(skinMask, ridgesMask, mask);
 
+        Core.bitwise_not(threshed, threshed);
+
         /// Apply mask to threshed image
         Mat threshMasked = new Mat();
-        Core.bitwise_and(threshed, mask, threshMasked);
+        Core.bitwise_and(threshed, threshed, threshMasked, mask);
 
-//        /// Get orientation map
-//        Mat orientationMap = getOrientationMap(threshMasked, blockSize);
-//        Mat visualisation = visualizeOrientationMap(resized, orientationMap, blockSize);
-//
-//        /// Calculate frequency
-//        double frequency = getRidgeFrequency(threshMasked, orientationMap, blockSize, 5, 3, 15);
-//
-//        /// Gabor filter to remove noise
-//        Mat gaborFiltered = getGaborFiltered(threshMasked, orientationMap, frequency);
-//
-//        /// Threshold gabor filtered image
-//        Mat gaborThreshed = new Mat();
-//        Imgproc.threshold(gaborFiltered, gaborThreshed, 128, 255, Imgproc.THRESH_BINARY);
-//
-//        /// Skeletonize gabor filtered thresholded image
-//        gaborThreshed.convertTo(gaborThreshed, CvType.CV_8U);
-//        Mat skeletonized = new Mat();
-//        Ximgproc.thinning(gaborThreshed, skeletonized);
-//
-//        /// Find minutiaes
-//        Mat minutiaes = findMinutiaes(skeletonized);
+
+        /// Get orientation map
+        Mat orientationMap = getOrientationMap(threshMasked, blockSize);
+        Mat visualisation = visualizeOrientationMap(resized, orientationMap, blockSize);
+
+        /// Calculate frequency
+        double frequency = getRidgeFrequency(threshMasked, orientationMap, blockSize, 7, 5, 15);
+
+        /// Gabor filter to remove noise
+        Mat gaborFiltered = getGaborFiltered(threshMasked, orientationMap, frequency);
+
+        /// Threshold gabor filtered image
+        Mat gaborThreshed = new Mat();
+        Imgproc.threshold(gaborFiltered, gaborThreshed, 128, 255, Imgproc.THRESH_BINARY);
+
+        Core.bitwise_not(threshMasked, threshMasked);
+
+        /// Skeletonize gabor filtered thresholded image
+        gaborThreshed.convertTo(gaborThreshed, CvType.CV_8U);
+
+
+        Mat skeletonized = new Mat();
+        Ximgproc.thinning(gaborThreshed, skeletonized);
+
+        /// Find minutiaes
+        Mat minutiaes = findMinutiaes(skeletonized);
+
+        Core.bitwise_not(skeletonized, skeletonized);
 
         if (outDirPath != null) {
             Imgcodecs.imwrite(outDirPath + File.separator + "0src.png", src);
@@ -124,10 +142,10 @@ public class ProcessImage {
             Imgcodecs.imwrite(outDirPath + File.separator + "5ridgesMask.png", ridgesMask);
             Imgcodecs.imwrite(outDirPath + File.separator + "6blurred.png", blurred);
             Imgcodecs.imwrite(outDirPath + File.separator + "7result.png", threshMasked);
-//            Imgcodecs.imwrite(outDirPath + File.separator + "visualisation.png", visualisation);
-//            Imgcodecs.imwrite(outDirPath + File.separator + "gaborThreshed.png", gaborThreshed);
-//            Imgcodecs.imwrite(outDirPath + File.separator + "skeletonized.png", skeletonized);
-//            Imgcodecs.imwrite(outDirPath + File.separator + "minutiaes.png", minutiaes);
+            Imgcodecs.imwrite(outDirPath + File.separator + "8visualisation.png", visualisation);
+            Imgcodecs.imwrite(outDirPath + File.separator + "9gaborThreshed.png", gaborThreshed);
+            Imgcodecs.imwrite(outDirPath + File.separator + "10skeletonized.png", skeletonized);
+            Imgcodecs.imwrite(outDirPath + File.separator + "11minutiaes.png", minutiaes);
         }
 
         return grayMatToBmp(threshMasked);
@@ -136,8 +154,11 @@ public class ProcessImage {
     private Mat findMinutiaes(Mat skeletonized) {
         int kernelSize = 3;
 
+        Mat skeletonized_inv = new Mat();
+        Core.bitwise_not(skeletonized, skeletonized_inv);
+
         Mat minutiaeImg = new Mat();
-        Imgproc.cvtColor(skeletonized, minutiaeImg, Imgproc.COLOR_GRAY2RGB);
+        Imgproc.cvtColor(skeletonized_inv, minutiaeImg, Imgproc.COLOR_GRAY2RGB);
 
         Mat skel = skeletonized.clone();
         Mat mask = new Mat();

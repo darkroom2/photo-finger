@@ -69,10 +69,10 @@ public class ShowStepsActivity extends AppCompatActivity {
         dictionary.put("5ridgesMask.png", "Step 5: Find ridges mask");
         dictionary.put("6blurred.png", "Step 6: Blur image & Enhance edges");
         dictionary.put("7result.png", "Step 7: Apply thresholding & mask");
-//        dictionary.put("visualisation.png", "Orientation map");
-//        dictionary.put("gaborThreshed.png", "Gabor threshed");
-//        dictionary.put("skeletonized.png", "Skeletonized");
-//        dictionary.put("minutiaes.png", "Minutiaes");
+        dictionary.put("8visualisation.png", "Orientation map");
+        dictionary.put("9gaborThreshed.png", "Gabor threshed");
+        dictionary.put("10skeletonized.png", "Skeletonized");
+        dictionary.put("11minutiaes.png", "Minutiaes");
     }
 
     private void nextPhoto() {
