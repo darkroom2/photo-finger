@@ -61,18 +61,18 @@ public class ShowStepsActivity extends AppCompatActivity {
 
     private void initializeDict() {
         dictionary = new HashMap<>();
-        dictionary.put("0src.png", "Step 0: Original image");
-        dictionary.put("1resized.png", "Step 1: Crop image & resize");
-        dictionary.put("2skinMask.png", "Step 2: Find skin mask");
-        dictionary.put("3grayMasked.png", "Step 3: Grayscale conversion");
-        dictionary.put("4equalized.png", "Step 4: Histogram equalization");
-        dictionary.put("5ridgesMask.png", "Step 5: Find ridges mask");
-        dictionary.put("6blurred.png", "Step 6: Blur image & Enhance edges");
-        dictionary.put("7result.png", "Step 7: Apply thresholding & mask");
-//        dictionary.put("visualisation.png", "Orientation map");
-//        dictionary.put("gaborThreshed.png", "Gabor threshed");
-//        dictionary.put("skeletonized.png", "Skeletonized");
-//        dictionary.put("minutiaes.png", "Minutiaes");
+        dictionary.put("00src.png", "Step 0: Original image");
+        dictionary.put("01resized.png", "Step 1: Crop image & resize");
+        dictionary.put("02skinMask.png", "Step 2: Find skin mask");
+        dictionary.put("03grayMasked.png", "Step 3: Grayscale conversion");
+        dictionary.put("04equalized.png", "Step 4: Histogram equalization");
+        dictionary.put("05ridgesMask.png", "Step 5: Find ridges mask");
+        dictionary.put("06blurred.png", "Step 6: Blur image & Enhance edges");
+        dictionary.put("07result.png", "Step 7: Apply thresholding & mask");
+        dictionary.put("08visualisation.png", "Step 8: Orientation map");
+        dictionary.put("09gaborThreshed.png", "Step 9: Gabor threshed");
+        dictionary.put("10skeletonized.png", "Step 10: Skeletonized");
+        dictionary.put("11minutiaes.png", "Step 11: Minutiaes");
     }
 
     private void nextPhoto() {

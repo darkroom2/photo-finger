@@ -12,7 +12,6 @@ import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.annotation.IntRange;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
@@ -131,7 +130,7 @@ public class MainActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
     }
 
-    private void getStatistics(int threshold) {
+    private void getStatistics() {
         File dirTemplates = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Baza/Wzorce");
 
         File[] templates = dirTemplates.listFiles();
@@ -155,17 +154,14 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         }
-//        double fmrValue = getFmrValue(threshold, allUsers, uniqueNames);
-//        double fnmrValue = getFnmrValue(threshold, allUsers);
-
         try (
                 Writer writer = Files.newBufferedWriter(Paths.get(new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "roc.csv").getAbsolutePath()));
-                CSVWriter csvWriter = new CSVWriter(writer);
+                CSVWriter csvWriter = new CSVWriter(writer)
         ) {
             String[] headerRecord = {"Threshold", "FMR", "FNMR"};
             csvWriter.writeNext(headerRecord);
 
-            IntStream.range(0, 50).forEach(
+            IntStream.range(1, 51).forEach(
                     i -> csvWriter.writeNext(
                             new String[]
                                     {
@@ -175,7 +171,6 @@ public class MainActivity extends AppCompatActivity {
                                     }
                     )
             );
-
         } catch (IOException e) {
             runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad zapisu do csv", Toast.LENGTH_SHORT).show());
         }
@@ -258,7 +253,7 @@ public class MainActivity extends AppCompatActivity {
                     byte[] image = Files.readAllBytes(skeletonImg.toPath());
                     FingerprintTemplate template = new FingerprintTemplate(
                             new FingerprintImage()
-                                    .dpi(500)
+                                    .dpi(415)
                                     .decode(image));
                     byte[] serialized = template.toByteArray();
 
@@ -342,7 +337,7 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(MainActivity.this, "Blad tworzenia folderu (identify)", Toast.LENGTH_SHORT).show();
                 }
 
-                ProcessImage pi = new ProcessImage(currentPhotoPath, outDir.getAbsolutePath());
+                new ProcessImage(currentPhotoPath, outDir.getAbsolutePath());
 
                 // usuniecie oryginalu przetworzonego zdjecia
                 boolean deleted = new File(currentPhotoPath).delete();
@@ -352,14 +347,14 @@ public class MainActivity extends AppCompatActivity {
                 // AFIS przetworzonego zdjecia
                 byte[] probeImage = null;
                 try {
-                    probeImage = Files.readAllBytes(new File(outDir, "7result.png").toPath());
+                    probeImage = Files.readAllBytes(new File(outDir, "07result.png").toPath());
                 } catch (IOException e) {
                     runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show());
                 }
 
                 if (probeImage != null) {
 
-                    FingerprintTemplate probe = new FingerprintTemplate(new FingerprintImage().dpi(500).decode(probeImage));
+                    FingerprintTemplate probe = new FingerprintTemplate(new FingerprintImage().dpi(415).decode(probeImage));
 
                     // Wczytanie wzorcow do listy
                     File dirTemplates = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Baza/Wzorce");
@@ -420,7 +415,7 @@ public class MainActivity extends AppCompatActivity {
     public void updateStatistics(View view) {
         view.setVisibility(View.INVISIBLE);
         executorService.execute(() -> {
-            getStatistics(30);
+            getStatistics();
             runOnUiThread(() -> {
                 view.setVisibility(View.VISIBLE);
                 Toast.makeText(MainActivity.this, "Zaktualizowano statystyki!", Toast.LENGTH_SHORT).show();
