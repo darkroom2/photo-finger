@@ -31,6 +31,7 @@ import java.io.IOException;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -160,20 +161,29 @@ public class MainActivity extends AppCompatActivity {
         ) {
             String[] headerRecord = {"Threshold", "FMR", "FNMR"};
             csvWriter.writeNext(headerRecord);
-
-            IntStream.range(1, 51).forEach(
-                    i -> csvWriter.writeNext(
-                            new String[]
-                                    {
-                                            Integer.toString(i),
-                                            String.format(new Locale("pl"), "%.10f", getFmrValue(i, allUsers, uniqueNames)),
-                                            String.format(new Locale("pl"), "%.10f", getFnmrValue(i, allUsers))
-                                    }
-                    )
-            );
         } catch (IOException e) {
             runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad zapisu do csv", Toast.LENGTH_SHORT).show());
         }
+
+        IntStream.range(10, 14).forEach(
+                i -> {
+                    try (
+                            Writer writer = Files.newBufferedWriter(Paths.get(new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "roc.csv").getAbsolutePath()), StandardOpenOption.APPEND);
+                            CSVWriter csvWriter = new CSVWriter(writer)
+                    ) {
+                        csvWriter.writeNext(
+                                new String[]
+                                        {
+                                                Integer.toString(i),
+                                                String.format(new Locale("pl"), "%.10f", getFmrValue(i, allUsers, uniqueNames)),
+                                                String.format(new Locale("pl"), "%.10f", getFnmrValue(i, allUsers))
+                                        }
+                        );
+                    } catch (IOException e) {
+                        runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad zapisu do csv", Toast.LENGTH_SHORT).show());
+                    }
+                }
+        );
 
     }
 
