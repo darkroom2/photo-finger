@@ -165,20 +165,22 @@ public class MainActivity extends AppCompatActivity {
             runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad zapisu do csv", Toast.LENGTH_SHORT).show());
         }
 
-        IntStream.range(10, 14).forEach(
+        IntStream.range(1, 51).forEach(
                 i -> {
                     try (
                             Writer writer = Files.newBufferedWriter(Paths.get(new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "roc.csv").getAbsolutePath()), StandardOpenOption.APPEND);
                             CSVWriter csvWriter = new CSVWriter(writer)
                     ) {
+                        String[] dane = new String[]
+                                {
+                                        Integer.toString(i),
+                                        String.format(new Locale("pl"), "%.10f", getFmrValue(i, allUsers, uniqueNames)),
+                                        String.format(new Locale("pl"), "%.10f", getFnmrValue(i, allUsers))
+                                };
                         csvWriter.writeNext(
-                                new String[]
-                                        {
-                                                Integer.toString(i),
-                                                String.format(new Locale("pl"), "%.10f", getFmrValue(i, allUsers, uniqueNames)),
-                                                String.format(new Locale("pl"), "%.10f", getFnmrValue(i, allUsers))
-                                        }
+                                dane
                         );
+                        runOnUiThread(() -> Toast.makeText(MainActivity.this, "thr=" + dane[0] + " / fmr=" + dane[1] + " / fnmr=" + dane[2], Toast.LENGTH_LONG).show());
                     } catch (IOException e) {
                         runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad zapisu do csv", Toast.LENGTH_SHORT).show());
                     }
