@@ -19,6 +19,10 @@ import androidx.core.content.FileProvider;
 import com.machinezoo.sourceafis.FingerprintImage;
 import com.machinezoo.sourceafis.FingerprintMatcher;
 import com.machinezoo.sourceafis.FingerprintTemplate;
+import com.machinezoo.sourceafis.FingerprintTransparency;
+import com.machinezoo.sourceafis.transparency.MutableTemplate;
+import com.machinezoo.sourceafis.visualization.TransparencyImage;
+import com.machinezoo.sourceafis.visualization.TransparencyMarkers;
 import com.opencsv.CSVWriter;
 
 import org.opencv.android.BaseLoaderCallback;
@@ -26,8 +30,10 @@ import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -165,7 +171,7 @@ public class MainActivity extends AppCompatActivity {
             runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad zapisu do csv", Toast.LENGTH_SHORT).show());
         }
 
-        IntStream.range(1, 51).forEach(
+        IntStream.range(10, 14).forEach(
                 i -> {
                     try (
                             Writer writer = Files.newBufferedWriter(Paths.get(new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "roc.csv").getAbsolutePath()), StandardOpenOption.APPEND);
@@ -349,7 +355,9 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(MainActivity.this, "Blad tworzenia folderu (identify)", Toast.LENGTH_SHORT).show();
                 }
 
-                new ProcessImage(currentPhotoPath, outDir.getAbsolutePath());
+//                new ProcessImage(currentPhotoPath, outDir.getAbsolutePath());
+                ProcessImage pi = new ProcessImage("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Baza/Obrazy/Redke_Prawa_Wskaz_0.png", outDir.getAbsolutePath());
+//                ProcessImage pi = new ProcessImage("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Baza/Obrazy/Redke_Prawa_Wskaz_0.png");
 
                 // usuniecie oryginalu przetworzonego zdjecia
                 boolean deleted = new File(currentPhotoPath).delete();
@@ -366,38 +374,52 @@ public class MainActivity extends AppCompatActivity {
 
                 if (probeImage != null) {
 
-                    FingerprintTemplate probe = new FingerprintTemplate(new FingerprintImage().dpi(415).decode(probeImage));
+                    try (
+                            OutputStream stream = new FileOutputStream(new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "transparency.zip"));
+                            FingerprintTransparency transparency = FingerprintTransparency.zip(stream)
+                    ) {
+                        FingerprintTemplate probe = new FingerprintTemplate(pi.getBytes());
 
-                    // Wczytanie wzorcow do listy
-                    File dirTemplates = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Baza/Wzorce");
-                    File[] files = dirTemplates.listFiles();
+                        // Wczytanie wzorcow do listy
+                        File dirTemplates = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Baza/Wzorce");
+                        File[] files = dirTemplates.listFiles();
 
-                    List<UserDetails> users = new ArrayList<>();
+                        List<UserDetails> users = new ArrayList<>();
 
-                    if (files != null) {
-                        for (File file : files) {
-                            try {
-                                byte[] serialized = Files.readAllBytes(file.toPath());
-                                FingerprintTemplate template = new FingerprintTemplate(serialized);
-                                users.add(new UserDetails(new Random().nextInt(150), file.getName(), template));
-                            } catch (IOException e) {
-                                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show());
+                        if (files != null) {
+                            for (File file : files) {
+                                try {
+                                    byte[] serialized = Files.readAllBytes(file.toPath());
+                                    FingerprintTemplate template = new FingerprintTemplate(serialized);
+                                    users.add(new UserDetails(new Random().nextInt(150), file.getName(), template));
+                                } catch (IOException e) {
+                                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show());
+                                }
                             }
                         }
+
+                        // porownanie zdjecia z lista wzorcow
+                        UserDetails found = null;
+                        if (!users.isEmpty()) {
+                            found = find(probe, users);
+                        }
+                        if (found != null) {
+                            String str = found.name;
+                            str = str.substring(0, str.indexOf('.'));
+                            String[] arrOfStr = str.split("_");
+                            result = String.join(" / ", arrOfStr);
+                        }
+
+                        byte[] visualization = new TransparencyImage(600, 600)
+                                .image(probeImage)
+                                .add(TransparencyMarkers.markTemplate(MutableTemplate.parse(probe.toByteArray())))
+                                .bytes();
+
+                    } catch (IOException e) {
+                        e.printStackTrace();
                     }
 
-                    // porownanie zdjecia z lista wzorcow
-                    UserDetails found = null;
-                    if (!users.isEmpty()) {
-                        found = find(probe, users);
-                    }
 
-                    if (found != null) {
-                        String str = found.name;
-                        str = str.substring(0, str.indexOf('.'));
-                        String[] arrOfStr = str.split("_");
-                        result = String.join(" / ", arrOfStr);
-                    }
                 } else {
                     Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show();
                 }

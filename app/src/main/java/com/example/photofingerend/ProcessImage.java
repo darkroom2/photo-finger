@@ -3,6 +3,12 @@ package com.example.photofingerend;
 import android.graphics.Bitmap;
 import android.util.Pair;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.cbor.CBORFactory;
+
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
 import org.opencv.core.CvException;
@@ -24,9 +30,45 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+
+class MinutiaeTemplate {
+    String version;
+    int width;
+    int height;
+    int[] positionsX;
+    int[] positionsY;
+    double[] directions;
+    String types;
+
+    public MinutiaeTemplate(int width, int height, int[] positionsX, int[] positionsY, double[] directions, String types) {
+        this.version = "3.11.0";
+        this.width = width;
+        this.height = height;
+        this.positionsX = positionsX;
+        this.positionsY = positionsY;
+        this.directions = directions;
+        this.types = types;
+    }
+}
+
+class MinutiaeDetails {
+    public int row;
+    public int col;
+    public double dir;
+    public char type;
+
+    public MinutiaeDetails(int row, int col, double dir, char type) {
+        this.row = row;
+        this.col = col;
+        this.dir = dir;
+        this.type = type;
+    }
+}
+
 public class ProcessImage {
 
     private final Bitmap result;
+    private byte[] minutiaeCBOR = null;
 
     public ProcessImage(String photoPath, String outDirPath) {
         this.result = processImage(photoPath, outDirPath);
@@ -102,7 +144,8 @@ public class ProcessImage {
         Core.bitwise_not(threshMasked, threshMasked);
 
         // jesli przetwarzanie dla uzytkownika (nie dla bazy danych)
-        if (outDirPath != null) {        /// Get orientation map
+        if (true) {        /// Get orientation map
+//        if (outDirPath != null) {        /// Get orientation map
             Mat orientationMap = getOrientationMap(threshMasked, blockSize);
             Mat visualisation = visualizeOrientationMap(resized, orientationMap, blockSize);
 
@@ -130,29 +173,60 @@ public class ProcessImage {
             Ximgproc.thinning(gaborThreshed, skeletonized);
 
             /// Find minutiaes
-            Mat minutiaes = findMinutiaes(skeletonized);
+            List<MinutiaeDetails> minutiaesDets = new ArrayList<>();
+            Mat minutiaes = findMinutiaes(skeletonized, orientationMap, minutiaesDets);
+
+            int width = skeletonized.width();
+            int height = skeletonized.height();
+            List<Integer> positionsX = new ArrayList<>();
+            List<Integer> positionsY = new ArrayList<>();
+            List<Double> directions = new ArrayList<>();
+            StringBuilder types = new StringBuilder();
+
+            for (MinutiaeDetails detail : minutiaesDets) {
+                positionsX.add(detail.col);
+                positionsY.add(detail.row);
+                directions.add(detail.dir);
+                types.append(detail.type);
+            }
+
+            ObjectMapper mapper = new ObjectMapper(new CBORFactory()).setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
+
+            try {
+                minutiaeCBOR = mapper.writeValueAsBytes(new MinutiaeTemplate(width, height, positionsX.stream()
+                        .mapToInt(Integer::intValue)
+                        .toArray(), positionsY.stream()
+                        .mapToInt(Integer::intValue)
+                        .toArray(), directions.stream()
+                        .mapToDouble(Double::doubleValue)
+                        .toArray(), types.toString()));
+            } catch (JsonProcessingException e) {
+                e.printStackTrace();
+            }
 
             Core.bitwise_not(skeletonized, skeletonized);
 
             // zapisz wyniki
-            Imgcodecs.imwrite(outDirPath + File.separator + "00src.png", src);
-            Imgcodecs.imwrite(outDirPath + File.separator + "01resized.png", resized);
-            Imgcodecs.imwrite(outDirPath + File.separator + "02skinMask.png", skinMask);
-            Imgcodecs.imwrite(outDirPath + File.separator + "03grayMasked.png", grayMasked);
-            Imgcodecs.imwrite(outDirPath + File.separator + "04equalized.png", equalized);
-            Imgcodecs.imwrite(outDirPath + File.separator + "05ridgesMask.png", ridgesMask);
-            Imgcodecs.imwrite(outDirPath + File.separator + "06blurred.png", blurred);
-            Imgcodecs.imwrite(outDirPath + File.separator + "07result.png", threshMasked);
-            Imgcodecs.imwrite(outDirPath + File.separator + "08visualisation.png", visualisation);
-            Imgcodecs.imwrite(outDirPath + File.separator + "09gaborThreshed.png", gaborThreshedInv);
-            Imgcodecs.imwrite(outDirPath + File.separator + "10skeletonized.png", skeletonized);
-            Imgcodecs.imwrite(outDirPath + File.separator + "11minutiaes.png", minutiaes);
+            if (outDirPath != null) {
+                Imgcodecs.imwrite(outDirPath + File.separator + "00src.png", src);
+                Imgcodecs.imwrite(outDirPath + File.separator + "01resized.png", resized);
+                Imgcodecs.imwrite(outDirPath + File.separator + "02skinMask.png", skinMask);
+                Imgcodecs.imwrite(outDirPath + File.separator + "03grayMasked.png", grayMasked);
+                Imgcodecs.imwrite(outDirPath + File.separator + "04equalized.png", equalized);
+                Imgcodecs.imwrite(outDirPath + File.separator + "05ridgesMask.png", ridgesMask);
+                Imgcodecs.imwrite(outDirPath + File.separator + "06blurred.png", blurred);
+                Imgcodecs.imwrite(outDirPath + File.separator + "07result.png", threshMasked);
+                Imgcodecs.imwrite(outDirPath + File.separator + "08visualisation.png", visualisation);
+                Imgcodecs.imwrite(outDirPath + File.separator + "09gaborThreshed.png", gaborThreshedInv);
+                Imgcodecs.imwrite(outDirPath + File.separator + "10skeletonized.png", skeletonized);
+                Imgcodecs.imwrite(outDirPath + File.separator + "11minutiaes.png", minutiaes);
+            }
         }
 
         return grayMatToBmp(threshMasked);
     }
 
-    private Mat findMinutiaes(Mat skeletonized) {
+    private Mat findMinutiaes(Mat skeletonized, Mat orientationMap, List<MinutiaeDetails> coords) {
         int kernelSize = 3;
 
         Mat skeletonized_inv = new Mat();
@@ -170,8 +244,8 @@ public class ProcessImage {
         int rows = skel.rows();
         int cols = skel.cols();
 
-        for (int i = kernelSize / 2; i < cols - kernelSize / 2; ++i) {
-            for (int j = kernelSize / 2; j < rows - kernelSize / 2; ++j) {
+        for (int i = kernelSize / 2 + 100; i < cols - kernelSize / 2 - 100; ++i) {
+            for (int j = kernelSize / 2 + 100; j < rows - kernelSize / 2 - 100; ++j) {
                 int cn = 0;
                 if (skel.get(j, i)[0] == 1) {
                     cn += Math.abs(skel.get(j - 1, i - 1)[0] - skel.get(j - 1, i)[0]);
@@ -185,8 +259,10 @@ public class ProcessImage {
                     cn = cn / 2;
                     if (cn == 1) {
                         Imgproc.circle(minutiaeImg, new Point(i, j), 3, new Scalar(0, 0, 150), 1);
+                        coords.add(new MinutiaeDetails(j, i, orientationMap.get(j / 16, i / 16)[0], 'E'));
                     } else if (cn == 3) {
                         Imgproc.circle(minutiaeImg, new Point(i, j), 3, new Scalar(0, 150, 0), 1);
+                        coords.add(new MinutiaeDetails(j, i, orientationMap.get(j / 16, i / 16)[0], 'B'));
                     }
                 }
             }
@@ -551,4 +627,7 @@ public class ProcessImage {
         }
     }
 
+    public byte[] getBytes() {
+        return minutiaeCBOR;
+    }
 }
