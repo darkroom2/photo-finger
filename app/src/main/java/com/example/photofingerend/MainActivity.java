@@ -355,9 +355,7 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(MainActivity.this, "Blad tworzenia folderu (identify)", Toast.LENGTH_SHORT).show();
                 }
 
-//                new ProcessImage(currentPhotoPath, outDir.getAbsolutePath());
                 ProcessImage pi = new ProcessImage("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Baza/Obrazy/Redke_Prawa_Wskaz_0.png", outDir.getAbsolutePath());
-//                ProcessImage pi = new ProcessImage("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Baza/Obrazy/Redke_Prawa_Wskaz_0.png");
 
                 // usuniecie oryginalu przetworzonego zdjecia
                 boolean deleted = new File(currentPhotoPath).delete();
@@ -372,57 +370,39 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show());
                 }
 
-                if (probeImage != null) {
 
-                    try (
-                            OutputStream stream = new FileOutputStream(new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "transparency.zip"));
-                            FingerprintTransparency transparency = FingerprintTransparency.zip(stream)
-                    ) {
-                        FingerprintTemplate probe = new FingerprintTemplate(pi.getBytes());
+                FingerprintTemplate probe = new FingerprintTemplate(pi.getBytes());
 
-                        // Wczytanie wzorcow do listy
-                        File dirTemplates = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Baza/Wzorce");
-                        File[] files = dirTemplates.listFiles();
+                // Wczytanie wzorcow do listy
+                File dirTemplates = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "Baza/Wzorce");
+                File[] files = dirTemplates.listFiles();
 
-                        List<UserDetails> users = new ArrayList<>();
+                List<UserDetails> users = new ArrayList<>();
 
-                        if (files != null) {
-                            for (File file : files) {
-                                try {
-                                    byte[] serialized = Files.readAllBytes(file.toPath());
-                                    FingerprintTemplate template = new FingerprintTemplate(serialized);
-                                    users.add(new UserDetails(new Random().nextInt(150), file.getName(), template));
-                                } catch (IOException e) {
-                                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show());
-                                }
-                            }
+                if (files != null) {
+                    for (File file : files) {
+                        try {
+                            byte[] serialized = Files.readAllBytes(file.toPath());
+                            FingerprintTemplate template = new FingerprintTemplate(serialized);
+                            users.add(new UserDetails(new Random().nextInt(150), file.getName(), template));
+                        } catch (IOException e) {
+                            runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show());
                         }
-
-                        // porownanie zdjecia z lista wzorcow
-                        UserDetails found = null;
-                        if (!users.isEmpty()) {
-                            found = find(probe, users);
-                        }
-                        if (found != null) {
-                            String str = found.name;
-                            str = str.substring(0, str.indexOf('.'));
-                            String[] arrOfStr = str.split("_");
-                            result = String.join(" / ", arrOfStr);
-                        }
-
-                        byte[] visualization = new TransparencyImage(600, 600)
-                                .image(probeImage)
-                                .add(TransparencyMarkers.markTemplate(MutableTemplate.parse(probe.toByteArray())))
-                                .bytes();
-
-                    } catch (IOException e) {
-                        e.printStackTrace();
                     }
-
-
-                } else {
-                    Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show();
                 }
+
+                // porownanie zdjecia z lista wzorcow
+                UserDetails found = null;
+                if (!users.isEmpty()) {
+                    found = find(probe, users);
+                }
+                if (found != null) {
+                    String str = found.name;
+                    str = str.substring(0, str.indexOf('.'));
+                    String[] arrOfStr = str.split("_");
+                    result = String.join(" / ", arrOfStr);
+                }
+
             }
 
             // po skonczeniu identyfikacji odswiezamy watek UI i konczymy prace (powracajac do watku UI)
