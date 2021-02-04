@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Pair;
+import android.util.TimingLogger;
 import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -330,7 +331,10 @@ public class MainActivity extends AppCompatActivity {
         identifyButton.setVisibility(View.INVISIBLE);
         instructionText.setText(R.string.wait_tip);
 
+        TimingLogger timings = new TimingLogger("TIMER_PHOTOFINGRR", "identify()");
         identify();
+        timings.addSplit("identify");
+        timings.dumpToLog();
 
     }
 
@@ -355,22 +359,17 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(MainActivity.this, "Blad tworzenia folderu (identify)", Toast.LENGTH_SHORT).show();
                 }
 
-                ProcessImage pi = new ProcessImage("/storage/emulated/0/Android/data/com.example.photofingerend/files/Pictures/Baza/Obrazy/Redke_Prawa_Wskaz_0.png", outDir.getAbsolutePath());
+                TimingLogger timings = new TimingLogger("FUCKING_TIMER", "ProcessImage()");
+                ProcessImage pi = new ProcessImage(currentPhotoPath, outDir.getAbsolutePath());
+                timings.dumpToLog();
 
                 // usuniecie oryginalu przetworzonego zdjecia
                 boolean deleted = new File(currentPhotoPath).delete();
                 if (!deleted)
                     Toast.makeText(MainActivity.this, "Blad usuwania (identify)", Toast.LENGTH_SHORT).show();
 
-                // AFIS przetworzonego zdjecia
-                byte[] probeImage = null;
-                try {
-                    probeImage = Files.readAllBytes(new File(outDir, "07result.png").toPath());
-                } catch (IOException e) {
-                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Blad wczytania pliku (identify)", Toast.LENGTH_SHORT).show());
-                }
 
-
+                TimingLogger timings2 = new TimingLogger("FUCKING_TIMER", "matching()");
                 FingerprintTemplate probe = new FingerprintTemplate(pi.getBytes());
 
                 // Wczytanie wzorcow do listy
@@ -402,7 +401,8 @@ public class MainActivity extends AppCompatActivity {
                     String[] arrOfStr = str.split("_");
                     result = String.join(" / ", arrOfStr);
                 }
-
+                timings2.addSplit("match");
+                timings2.dumpToLog();
             }
 
             // po skonczeniu identyfikacji odswiezamy watek UI i konczymy prace (powracajac do watku UI)
