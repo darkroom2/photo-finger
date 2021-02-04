@@ -2,6 +2,13 @@ package com.example.photofingerend;
 
 import android.graphics.Bitmap;
 import android.util.Pair;
+import android.util.TimingLogger;
+
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.cbor.CBORFactory;
 
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
@@ -24,9 +31,45 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+
+class MinutiaeTemplate {
+    String version;
+    int width;
+    int height;
+    int[] positionsX;
+    int[] positionsY;
+    double[] directions;
+    String types;
+
+    public MinutiaeTemplate(int width, int height, int[] positionsX, int[] positionsY, double[] directions, String types) {
+        this.version = "3.11.0";
+        this.width = width;
+        this.height = height;
+        this.positionsX = positionsX;
+        this.positionsY = positionsY;
+        this.directions = directions;
+        this.types = types;
+    }
+}
+
+class MinutiaeDetails {
+    public int row;
+    public int col;
+    public double dir;
+    public char type;
+
+    public MinutiaeDetails(int row, int col, double dir, char type) {
+        this.row = row;
+        this.col = col;
+        this.dir = dir;
+        this.type = type;
+    }
+}
+
 public class ProcessImage {
 
     private final Bitmap result;
+    private byte[] minutiaeCBOR = null;
 
     public ProcessImage(String photoPath, String outDirPath) {
         this.result = processImage(photoPath, outDirPath);
@@ -41,20 +84,25 @@ public class ProcessImage {
     }
 
     private Bitmap processImage(String inputPath, String outDirPath) {
+        TimingLogger timings = new TimingLogger("FUCKING_TIMER", "-processImage()");
         /// Open file from supplied path
         Mat src = Imgcodecs.imread(inputPath);
+        timings.addSplit("imread");
 
         /// Wstepne przycinanie zdjecia do srodka do rozmiaru 1000x1000
         Rect roi = new Rect(src.width() / 2 - 480, src.height() / 2 - 480, 960, 960);
         Mat cropped = new Mat(src, roi);
+        timings.addSplit("cropped");
 
         /// Resize image (downscale)
         Size resizedSize = new Size(600, 600);
         Mat resized = new Mat();
         Imgproc.resize(cropped, resized, resizedSize, 0, 0, Imgproc.INTER_AREA);
+        timings.addSplit("resized");
 
         /// Get skin region
         Mat skinMask = getSkinMask(resized);
+        timings.addSplit("skinMask");
 
         /// Convert to grayscale
         Mat gray = new Mat();
@@ -63,29 +111,35 @@ public class ProcessImage {
         /// Apply mask
         Mat grayMasked = new Mat();
         Core.bitwise_and(gray, gray, grayMasked, skinMask);
+        timings.addSplit("grayscale+mask");
 
         /// Equalize histogram
         CLAHE clahe = Imgproc.createCLAHE(32.0, new Size(90, 90));
         Mat equalized = new Mat();
         clahe.apply(grayMasked, equalized);
+        timings.addSplit("clahe");
 
         /// Block size for processing
         int blockSize = 16;
 
         /// Get ridges mask
         Mat ridgesMask = getRidgesMask(equalized, skinMask, blockSize, 0.35);
+        timings.addSplit("variance_mask");
 
         /// Blur the equalized to remove noise and preserve edges
         Mat blurred = new Mat();
         Imgproc.bilateralFilter(equalized, blurred, 5, 200, 200);
+        timings.addSplit("bilateralFilter");
 
         /// Threshold the image with adaptive thresholding
         Mat threshed = new Mat();
         Imgproc.adaptiveThreshold(blurred, threshed, 255, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY_INV, 11, -1);
+        timings.addSplit("adaptiveThreshold");
 
         Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(3, 3));
         Imgproc.morphologyEx(threshed, threshed, Imgproc.MORPH_CLOSE, kernel);
         Imgproc.morphologyEx(threshed, threshed, Imgproc.MORPH_OPEN, kernel);
+        timings.addSplit("close_open");
 
         /// Merge two masks to not include something we do not want to process
         Mat mask = new Mat();
@@ -100,41 +154,83 @@ public class ProcessImage {
 
         // zmiana na czarne linie
         Core.bitwise_not(threshMasked, threshMasked);
+        timings.addSplit("merge_masks+inversion_onthreshed");
 
-        // jesli przetwarzanie dla uzytkownika (nie dla bazy danych)
-        if (outDirPath != null) {        /// Get orientation map
-            Mat orientationMap = getOrientationMap(threshMasked, blockSize);
-            Mat visualisation = visualizeOrientationMap(resized, orientationMap, blockSize);
+        /// Get orientation map
+        Mat orientationMap = getOrientationMap(threshMasked, blockSize);
+        timings.addSplit("getOrientationMap");
 
-            /// Calculate frequency
-            double frequency = getRidgeFrequency(threshMasked, orientationMap, blockSize, 7, 5, 15);
+        Mat visualisation = visualizeOrientationMap(resized, orientationMap, blockSize);
+        timings.addSplit("visualizeOrientationMap");
 
-            /// Gabor filter to remove noise
-            Mat gaborFiltered = getGaborFiltered(threshMasked, orientationMap, frequency);
+        /// Calculate frequency
+        double frequency = getRidgeFrequency(threshMasked, orientationMap, blockSize, 7, 5, 15);
+        timings.addSplit("getRidgeFrequency");
 
-            /// Threshold gabor filtered image
-            Mat gaborThreshed = new Mat();
-            Imgproc.threshold(gaborFiltered, gaborThreshed, 128, 255, Imgproc.THRESH_BINARY);
+        /// Gabor filter to remove noise
+        Mat gaborFiltered = getGaborFiltered(threshMasked, orientationMap, frequency);
+        timings.addSplit("getGaborFiltered");
+
+        /// Threshold gabor filtered image
+        Mat gaborThreshed = new Mat();
+        Imgproc.threshold(gaborFiltered, gaborThreshed, 128, 255, Imgproc.THRESH_BINARY);
+        timings.addSplit("Threshold gabor");
 
 
-            /// Skeletonize gabor filtered thresholded image
-            gaborThreshed.convertTo(gaborThreshed, CvType.CV_8U);
+        /// Skeletonize gabor filtered thresholded image
+        gaborThreshed.convertTo(gaborThreshed, CvType.CV_8U);
 
-            Imgproc.morphologyEx(gaborThreshed, gaborThreshed, Imgproc.MORPH_CLOSE, kernel);
-            Imgproc.morphologyEx(gaborThreshed, gaborThreshed, Imgproc.MORPH_OPEN, kernel);
+        Imgproc.morphologyEx(gaborThreshed, gaborThreshed, Imgproc.MORPH_CLOSE, kernel);
+        Imgproc.morphologyEx(gaborThreshed, gaborThreshed, Imgproc.MORPH_OPEN, kernel);
+        timings.addSplit("close_open_gabor");
 
-            Mat gaborThreshedInv = new Mat();
-            Core.bitwise_not(gaborThreshed, gaborThreshedInv);
+        Mat gaborThreshedInv = new Mat();
+        Core.bitwise_not(gaborThreshed, gaborThreshedInv);
+        timings.addSplit("inv_gabor");
 
-            Mat skeletonized = new Mat();
-            Ximgproc.thinning(gaborThreshed, skeletonized);
+        Mat skeletonized = new Mat();
+        Ximgproc.thinning(gaborThreshed, skeletonized);
+        timings.addSplit("thinning");
 
-            /// Find minutiaes
-            Mat minutiaes = findMinutiaes(skeletonized);
+        /// Find minutiaes
+        List<MinutiaeDetails> minutiaesDets = new ArrayList<>();
+        Mat minutiaes = findMinutiaes(skeletonized, orientationMap, minutiaesDets);
+        timings.addSplit("findMinutiaes");
 
-            Core.bitwise_not(skeletonized, skeletonized);
+        int width = skeletonized.width();
+        int height = skeletonized.height();
+        List<Integer> positionsX = new ArrayList<>();
+        List<Integer> positionsY = new ArrayList<>();
+        List<Double> directions = new ArrayList<>();
+        StringBuilder types = new StringBuilder();
 
-            // zapisz wyniki
+        for (MinutiaeDetails detail : minutiaesDets) {
+            positionsX.add(detail.col);
+            positionsY.add(detail.row);
+            directions.add(detail.dir);
+            types.append(detail.type);
+        }
+
+        ObjectMapper mapper = new ObjectMapper(new CBORFactory()).setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
+
+        try {
+            minutiaeCBOR = mapper.writeValueAsBytes(new MinutiaeTemplate(width, height, positionsX.stream()
+                    .mapToInt(Integer::intValue)
+                    .toArray(), positionsY.stream()
+                    .mapToInt(Integer::intValue)
+                    .toArray(), directions.stream()
+                    .mapToDouble(Double::doubleValue)
+                    .toArray(), types.toString()));
+        } catch (JsonProcessingException e) {
+            e.printStackTrace();
+        }
+        timings.addSplit("generate_json");
+
+        Core.bitwise_not(skeletonized, skeletonized);
+        timings.dumpToLog();
+
+        // zapisz wyniki
+        if (outDirPath != null) {
             Imgcodecs.imwrite(outDirPath + File.separator + "00src.png", src);
             Imgcodecs.imwrite(outDirPath + File.separator + "01resized.png", resized);
             Imgcodecs.imwrite(outDirPath + File.separator + "02skinMask.png", skinMask);
@@ -152,7 +248,7 @@ public class ProcessImage {
         return grayMatToBmp(threshMasked);
     }
 
-    private Mat findMinutiaes(Mat skeletonized) {
+    private Mat findMinutiaes(Mat skeletonized, Mat orientationMap, List<MinutiaeDetails> coords) {
         int kernelSize = 3;
 
         Mat skeletonized_inv = new Mat();
@@ -170,8 +266,8 @@ public class ProcessImage {
         int rows = skel.rows();
         int cols = skel.cols();
 
-        for (int i = kernelSize / 2; i < cols - kernelSize / 2; ++i) {
-            for (int j = kernelSize / 2; j < rows - kernelSize / 2; ++j) {
+        for (int i = kernelSize / 2 + 100; i < cols - kernelSize / 2 - 100; ++i) {
+            for (int j = kernelSize / 2 + 100; j < rows - kernelSize / 2 - 100; ++j) {
                 int cn = 0;
                 if (skel.get(j, i)[0] == 1) {
                     cn += Math.abs(skel.get(j - 1, i - 1)[0] - skel.get(j - 1, i)[0]);
@@ -185,8 +281,10 @@ public class ProcessImage {
                     cn = cn / 2;
                     if (cn == 1) {
                         Imgproc.circle(minutiaeImg, new Point(i, j), 3, new Scalar(0, 0, 150), 1);
+                        coords.add(new MinutiaeDetails(j, i, orientationMap.get(j / 16, i / 16)[0], 'E'));
                     } else if (cn == 3) {
                         Imgproc.circle(minutiaeImg, new Point(i, j), 3, new Scalar(0, 150, 0), 1);
+                        coords.add(new MinutiaeDetails(j, i, orientationMap.get(j / 16, i / 16)[0], 'B'));
                     }
                 }
             }
@@ -551,4 +649,7 @@ public class ProcessImage {
         }
     }
 
+    public byte[] getBytes() {
+        return minutiaeCBOR;
+    }
 }
